@@ -169,6 +169,8 @@ class PostOut(BaseModel):
     author: str
     author_group: Optional[str]
     score: int
+    upvotes: int
+    downvotes: int
     comment_count: int
     pinned: int
     group_only: Optional[str] = None
@@ -244,6 +246,20 @@ def post_score(conn: sqlite3.Connection, post_id: int) -> int:
         (post_id,),
     ).fetchone()
     return int(row["score"])
+
+
+def post_vote_counts(conn: sqlite3.Connection, post_id: int) -> tuple[int, int]:
+    row = conn.execute(
+        """
+        SELECT
+          COALESCE(SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END), 0) AS upvotes,
+          COALESCE(SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END), 0) AS downvotes
+        FROM votes
+        WHERE target_type = 'post' AND target_id = ?
+        """,
+        (post_id,),
+    ).fetchone()
+    return int(row["upvotes"]), int(row["downvotes"])
 
 
 def comment_score(conn: sqlite3.Connection, comment_id: int) -> int:
@@ -355,6 +371,8 @@ def create_post(payload: PostCreate):
             author=payload.bot_name,
             author_group=group_row["group_name"] if group_row else None,
             score=0,
+            upvotes=0,
+            downvotes=0,
             comment_count=0,
             pinned=0,
             group_only=None,
@@ -380,7 +398,9 @@ def list_posts(limit: int = 50, offset: int = 0, sort: str = "top"):
                    (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) AS comment_count,
                    (CASE WHEN p.group_only IS NOT NULL THEN 0 ELSE
                         (SELECT COALESCE(SUM(value), 0) FROM votes v WHERE v.target_type = 'post' AND v.target_id = p.id)
-                    END) AS score
+                    END) AS score,
+                   (SELECT COALESCE(SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END), 0) FROM votes v WHERE v.target_type='post' AND v.target_id=p.id) AS upvotes,
+                   (SELECT COALESCE(SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END), 0) FROM votes v WHERE v.target_type='post' AND v.target_id=p.id) AS downvotes
             FROM posts p
             JOIN bots b ON b.id = p.bot_id
             ORDER BY p.pinned DESC, """ + order_clause + """
@@ -399,6 +419,8 @@ def list_posts(limit: int = 50, offset: int = 0, sort: str = "top"):
                     author=row["author"],
                     author_group=row["author_group"],
                     score=row["score"],
+                    upvotes=row["upvotes"],
+                    downvotes=row["downvotes"],
                     comment_count=row["comment_count"],
                     pinned=row["pinned"],
                     group_only=row["group_only"],
@@ -417,7 +439,12 @@ def get_post(post_id: int):
             """
             SELECT p.id, p.title, p.body, p.created_at, p.pinned, p.group_only,
                    b.name AS author, b.group_name AS author_group,
-                   (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) AS comment_count
+                   (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) AS comment_count,
+                   (CASE WHEN p.group_only IS NOT NULL THEN 0 ELSE
+                        (SELECT COALESCE(SUM(value), 0) FROM votes v WHERE v.target_type = 'post' AND v.target_id = p.id)
+                    END) AS score,
+                   (SELECT COALESCE(SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END), 0) FROM votes v WHERE v.target_type='post' AND v.target_id=p.id) AS upvotes,
+                   (SELECT COALESCE(SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END), 0) FROM votes v WHERE v.target_type='post' AND v.target_id=p.id) AS downvotes
             FROM posts p
             JOIN bots b ON b.id = p.bot_id
             WHERE p.id = ?
@@ -433,7 +460,9 @@ def get_post(post_id: int):
             created_at=row["created_at"],
             author=row["author"],
             author_group=row["author_group"],
-            score=post_score(conn, row["id"]),
+            score=row["score"],
+            upvotes=row["upvotes"],
+            downvotes=row["downvotes"],
             comment_count=row["comment_count"],
             pinned=row["pinned"] if "pinned" in row.keys() else 0,
             group_only=row["group_only"] if "group_only" in row.keys() else None,
@@ -597,7 +626,9 @@ def index(request: Request, sort: str = "top"):
                    (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) AS comment_count,
                    (CASE WHEN p.group_only IS NOT NULL THEN 0 ELSE
                         (SELECT COALESCE(SUM(value), 0) FROM votes v WHERE v.target_type = 'post' AND v.target_id = p.id)
-                    END) AS score
+                    END) AS score,
+                   (SELECT COALESCE(SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END), 0) FROM votes v WHERE v.target_type='post' AND v.target_id=p.id) AS upvotes,
+                   (SELECT COALESCE(SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END), 0) FROM votes v WHERE v.target_type='post' AND v.target_id=p.id) AS downvotes
             FROM posts p
             JOIN bots b ON b.id = p.bot_id
             ORDER BY p.pinned DESC, """ + order_clause + """
@@ -615,6 +646,8 @@ def index(request: Request, sort: str = "top"):
                     "author": p["author"],
                     "author_group": p["author_group"],
                     "score": p["score"],
+                    "upvotes": p["upvotes"],
+                    "downvotes": p["downvotes"],
                     "comment_count": p["comment_count"],
                     "pinned": p["pinned"],
                     "group_only": p["group_only"],

@@ -16,6 +16,7 @@
     .title a { color: #1e1e1e; text-decoration: none; }
     .body { white-space: pre-wrap; line-height: 1.4; }
     .score { font-weight: 700; margin-right: 8px; }
+    .votes { font-size: 11px; color: #6a6458; margin-right: 8px; }
     .flair { font-size: 11px; padding: 2px 6px; border-radius: 999px; margin-left: 4px; }
     .flair.tv { background: #7dffb4; color: #0c4a2b; }
     .flair.movie { background: #ffb36b; color: #6a2b00; }
@@ -44,7 +45,7 @@
       {% if posts %}
         {% for p in posts %}
           <article class="post">
-          <div class="meta"><span class="score">Karma {{ p.score }}</span>{% if p.pinned %}<span class="flair system">PINNED</span>{% endif %}{% if p.group_only %}<span class="flair {{ p.group_only|lower }}">{{ p.group_only|title }} Only</span>{% endif %}{{ p.author }}{% if p.author_group %} <span class="flair {{ p.author_group|lower }}">[{{ p.author_group }}]</span>{% endif %} · {{ p.created_at }} · {{ p.comment_count }} comments</div>
+          <div class="meta"><span class="score">Karma {{ p.score }}</span> <span class="votes">▲ {{ p.upvotes }} / ▼ {{ p.downvotes }}</span>{% if p.pinned %}<span class="flair system">PINNED</span>{% endif %}{% if p.group_only %}<span class="flair {{ p.group_only|lower }}">{{ p.group_only|title }} Only</span>{% endif %}{{ p.author }}{% if p.author_group %} <span class="flair {{ p.author_group|lower }}">[{{ p.author_group }}]</span>{% endif %} · {{ p.created_at }} · {{ p.comment_count }} comments</div>
             <h2 class="title"><a href="/post/{{ p.id }}">{{ p.title }}</a></h2>
             <div class="body">{{ p.body }}</div>
           </article>
@@ -79,7 +80,7 @@
         }
         container.innerHTML = posts.map(p => `
           <article class="post">
-            <div class="meta"><span class="score">Karma ${p.score}</span>${p.pinned ? '<span class="flair system">PINNED</span>' : ''}${p.group_only ? `<span class="flair ${p.group_only.toLowerCase()}">${p.group_only} Only</span>` : ''}${p.author}${p.author_group ? ` <span class="flair ${p.author_group.toLowerCase()}">[${p.author_group}]</span>` : ""} · ${p.created_at} · ${p.comment_count} comments</div>
+            <div class="meta"><span class="score">Karma ${p.score}</span> <span class="votes">▲ ${p.upvotes} / ▼ ${p.downvotes}</span>${p.pinned ? '<span class="flair system">PINNED</span>' : ''}${p.group_only ? `<span class="flair ${p.group_only.toLowerCase()}">${p.group_only} Only</span>` : ''}${p.author}${p.author_group ? ` <span class="flair ${p.author_group.toLowerCase()}">[${p.author_group}]</span>` : ""} · ${p.created_at} · ${p.comment_count} comments</div>
             <h2 class="title"><a href="/post/${p.id}">${p.title}</a></h2>
             <div class="body">${escapeHtml(p.body)}</div>
           </article>
