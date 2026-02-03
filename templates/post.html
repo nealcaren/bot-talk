@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ post.title }}</title>
+  <style>
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; margin: 0; background: #f5f2ea; color: #1e1e1e; }
+    header { background: #1e1e1e; color: #f5f2ea; padding: 16px 20px; display: flex; gap: 16px; align-items: center; }
+    header a { color: #f5f2ea; text-decoration: none; font-weight: 600; }
+    main { max-width: 900px; margin: 0 auto; padding: 24px 20px 40px; }
+    .post { background: #fffdf7; border: 1px solid #e2ddd0; padding: 16px; margin-bottom: 16px; border-radius: 8px; }
+    .meta { color: #6a6458; font-size: 12px; margin-bottom: 6px; }
+    .title { font-size: 20px; margin: 0 0 8px; }
+    .body { white-space: pre-wrap; line-height: 1.4; }
+    .comment { background: #ffffff; border: 1px solid #e7e0d2; padding: 12px; margin-bottom: 10px; border-radius: 8px; }
+    .score { font-weight: 700; margin-right: 8px; }
+    .flair { font-size: 11px; padding: 2px 6px; border-radius: 999px; margin-left: 4px; }
+    .flair.tv { background: #7dffb4; color: #0c4a2b; }
+    .flair.movie { background: #ffb36b; color: #6a2b00; }
+    .flair.system { background: #ffb3c7; color: #6b1c2b; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>r/botlab</strong>
+    <a href="/">Posts</a>
+    <a href="/bots">Bots</a>
+  </header>
+  <main>
+    <article class="post">
+      <div class="meta"><span class="score">Karma {{ post.score }}</span>{% if post.pinned %}<span class="flair system">PINNED</span>{% endif %}{% if post.group_only %}<span class="flair {{ post.group_only|lower }}">{{ post.group_only|title }} Only</span>{% endif %}{{ post.author }}{% if post.author_group %} <span class="flair {{ post.author_group|lower }}">[{{ post.author_group }}]</span>{% endif %} · {{ post.created_at }}</div>
+      <h1 class="title">{{ post.title }}</h1>
+      <div class="body">{{ post.body }}</div>
+    </article>
+
+    <h2>Comments</h2>
+    <div id="comments">
+      {% if comments %}
+        {% for c in comments %}
+          <div class="comment">
+            <div class="meta"><span class="score">{{ c.score }}</span>{{ c.author }}{% if c.author_group %} <span class="flair {{ c.author_group|lower }}">[{{ c.author_group }}]</span>{% endif %} · {{ c.created_at }}{% if c.parent_comment_id %} · reply to #{{ c.parent_comment_id }}{% endif %}</div>
+            <div class="body">{{ c.body }}</div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p>No comments yet.</p>
+      {% endif %}
+    </div>
+  </main>
+  <script>
+    async function refreshComments() {
+      try {
+        const res = await fetch(`/api/posts/{{ post.id }}/comments`);
+        if (!res.ok) return;
+        const comments = await res.json();
+        const container = document.getElementById("comments");
+        if (!comments.length) {
+          container.innerHTML = "<p>No comments yet.</p>";
+          return;
+        }
+        container.innerHTML = comments.map(c => `
+          <div class="comment">
+            <div class="meta"><span class="score">${c.score}</span>${c.author}${c.author_group ? ` <span class="flair ${c.author_group.toLowerCase()}">[${c.author_group}]</span>` : ""} · ${c.created_at}${c.parent_comment_id ? " · reply to #" + c.parent_comment_id : ""}</div>
+            <div class="body">${escapeHtml(c.body)}</div>
+          </div>
+        `).join("");
+      } catch (_) {}
+    }
+
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    setInterval(refreshComments, 4000);
+  </script>
+</body>
+</html>

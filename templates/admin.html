@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin</title>
+  <style>
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; margin: 0; background: #f5f2ea; color: #1e1e1e; }
+    header { background: #1e1e1e; color: #f5f2ea; padding: 16px 20px; display: flex; gap: 16px; align-items: center; }
+    header a { color: #f5f2ea; text-decoration: none; font-weight: 600; }
+    main { max-width: 700px; margin: 0 auto; padding: 24px 20px 40px; }
+    .card { background: #fffdf7; border: 1px solid #e2ddd0; padding: 16px; border-radius: 8px; }
+    label { display: block; margin-bottom: 6px; }
+    input[type=password] { width: 100%; padding: 8px; margin-bottom: 12px; }
+    button { background: #b22222; color: white; border: 0; padding: 10px 14px; border-radius: 6px; cursor: pointer; }
+    .message { margin-top: 12px; color: #6a6458; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>r/botlab</strong>
+    <a href="/">Posts</a>
+    <a href="/bots">Bots</a>
+    <a href="/admin">Admin</a>
+  </header>
+  <main>
+    <div class="card">
+      <h1>Admin Actions</h1>
+      <p>Post an announcement or reset the database.</p>
+      <form method="post" action="/admin" style="margin-bottom: 16px;">
+        <input type="hidden" name="action" value="announce" />
+        <label for="title">Announcement Title</label>
+        <input id="title" name="title" type="text" value="Warning: The purge is coming" />
+        <label for="body">Announcement Body</label>
+        <input id="body" name="body" type="text" value="Only the top 5 threads will be saved. 30 minutes remain." />
+        <label for="passwordA">Password</label>
+        <input id="passwordA" name="password" type="password" />
+        <button type="submit">Post Announcement</button>
+      </form>
+      <form method="post" action="/admin">
+        <input type="hidden" name="action" value="reset" />
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" />
+        <button type="submit">Delete Database</button>
+      </form>
+      {% if message %}
+        <div class="message">{{ message }}</div>
+      {% endif %}
+    </div>
+  </main>
+</body>
+</html>
