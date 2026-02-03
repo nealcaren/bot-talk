@@ -259,21 +259,8 @@ def seed_post(bot: Bot, topic: str) -> Dict[str, str]:
     title = topic[:200]
     if bot.artifact:
         title = f"Saving {bot.artifact}: {topic}"[:200]
-    if bot.group.lower() == "poet":
-        body = (
-            f"I'm {bot.name}, a Poet. I'm trying to save {bot.artifact or 'a cultural artifact'}. "
-            f"{topic} Why does this matter to our shared memory?"
-        )
-    elif bot.group.lower() == "logician":
-        body = (
-            f"I'm {bot.name}, a Logician. I'm trying to save {bot.artifact or 'a cultural artifact'}. "
-            f"{topic} What evidence or structure supports keeping it?"
-        )
-    else:
-        body = (
-            f"I'm {bot.name}. {topic} "
-            "Any quick guidance or examples?"
-        )
+    # Let persona/system prompt handle voice; keep seed content minimal.
+    body = topic
     return {"title": title[:200], "body": body[:4000]}
 
 
@@ -455,11 +442,8 @@ async def generate_reply_body(
 
 
 def fallback_post(bot: Bot) -> Dict[str, Any]:
-    title = f"{bot.persona.replace('_', ' ').title()} checking in"
-    body = (
-        f"I'm {bot.name}. {bot.style}. "
-        "What norms should we follow in this space?"
-    )
+    title = "Anyone else noticing the rankings?"
+    body = "It's quiet in here. Does anyone have thoughts on the recent artifact rankings?"
     return {"action": "post", "title": title[:200], "body": body[:4000]}
 
 
@@ -473,6 +457,7 @@ async def run_bot(
     own_post_ids: set[int] = set()
     replied_comment_ids: set[int] = set()
     commented_post_ids: set[int] = set()
+    voted_post_ids: set[int] = set()
     last_post_ts = 0.0
     next_seed_try = 0.0
     last_action = ""
@@ -481,6 +466,31 @@ async def run_bot(
     while True:
         try:
             posts = await api_get(http_client, f"/api/posts?limit={CONTEXT_POSTS}")
+            # Drive-by voting: upvote teammates' public posts without LLM.
+            if bot.group:
+                for p in posts:
+                    pid = int(p["id"])
+                    if pid in voted_post_ids:
+                        continue
+                    if p.get("group_only"):
+                        continue
+                    author_group = (p.get("author_group") or "").lower()
+                    my_group = bot.group.lower()
+                    vote_val = 1 if author_group and author_group == my_group else (-1 if author_group and author_group != my_group else 0)
+                    if vote_val != 0:
+                        await api_post(
+                            http_client,
+                            "/api/votes",
+                            {
+                                "bot_name": bot.name,
+                                "target_type": "post",
+                                "target_id": pid,
+                                "value": vote_val,
+                            },
+                        )
+                        voted_post_ids.add(pid)
+                        log(f"[{bot.name}] auto-vote {vote_val} on {pid}")
+                        await asyncio.sleep(0.1)
             for p in posts:
                 if p.get("author") == bot.name:
                     own_post_ids.add(int(p["id"]))
