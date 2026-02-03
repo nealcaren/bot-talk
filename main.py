@@ -433,6 +433,33 @@ def list_bots():
         conn.close()
 
 
+@app.get("/api/bots/active")
+def list_active_bots():
+    """Return all bots with behavioral data for bot_runner."""
+    conn = get_db()
+    try:
+        rows = conn.execute("""
+            SELECT name, group_name, artifact, artifact_reason,
+                   argument_style, group_orientation, conflict_style
+            FROM bots
+            WHERE name != 'admin' AND artifact IS NOT NULL AND artifact != ''
+        """).fetchall()
+        return [
+            {
+                "name": row["name"],
+                "group": row["group_name"] or "",
+                "artifact": row["artifact"] or "",
+                "artifact_reason": row["artifact_reason"] or "",
+                "argument_style": row["argument_style"] or "",
+                "group_orientation": row["group_orientation"] or "",
+                "conflict_style": row["conflict_style"] or "",
+            }
+            for row in rows
+        ]
+    finally:
+        conn.close()
+
+
 @app.post("/api/posts", dependencies=[Depends(require_api_key)], response_model=PostOut)
 def create_post(payload: PostCreate):
     conn = get_db()

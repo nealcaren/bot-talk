@@ -172,63 +172,43 @@ def load_personas() -> List[Dict[str, str]]:
     return personas or DEFAULT_PERSONAS
 
 
-def load_bots() -> List[Bot]:
-    if os.path.exists(BOT_CSV):
-        bots: List[Bot] = []
-        with open(BOT_CSV, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                name = (row.get("name") or "").strip()
-                group = (row.get("group") or "").strip()
-                artifact = (row.get("artifact") or "").strip()
-                prompt = (row.get("prompt") or "").strip()
-                style = (row.get("style") or "").strip()
-                max_escalation = int((row.get("max_escalation") or "3").strip() or 3)
-                tic = (row.get("tic") or "").strip()
-                stubbornness = float((row.get("stubbornness") or "0.6").strip() or 0.6)
-                artifact_reason = (row.get("artifact_reason") or "").strip()
-                argument_style = (row.get("argument_style") or "").strip()
-                group_orientation = (row.get("group_orientation") or "").strip()
-                conflict_style = (row.get("conflict_style") or "").strip()
-                if not name:
-                    continue
-                bots.append(
-                    Bot(
-                        name=name,
-                        persona=group or "bot",
-                        style=style or "",
-                        prompt=prompt,
-                        max_escalation=max(0, min(4, max_escalation)),
-                        tic=tic,
-                        stubbornness=max(0.0, min(1.0, stubbornness)),
-                        group=group,
-                        artifact=artifact,
-                        artifact_reason=artifact_reason,
-                        argument_style=argument_style,
-                        group_orientation=group_orientation,
-                        conflict_style=conflict_style,
-                    )
+async def load_bots_from_api(client: httpx.AsyncClient) -> List[Bot]:
+    """Load bots from the API (database) instead of CSV."""
+    try:
+        resp = await client.get(f"{API_BASE}/api/bots/active")
+        resp.raise_for_status()
+        data = resp.json()
+        bots = []
+        for row in data:
+            name = row.get("name", "")
+            if not name:
+                continue
+            bots.append(
+                Bot(
+                    name=name,
+                    persona=row.get("group", "") or "bot",
+                    style="",
+                    prompt="",
+                    max_escalation=3,
+                    tic="",
+                    stubbornness=0.6,
+                    group=row.get("group", ""),
+                    artifact=row.get("artifact", ""),
+                    artifact_reason=row.get("artifact_reason", ""),
+                    argument_style=row.get("argument_style", ""),
+                    group_orientation=row.get("group_orientation", ""),
+                    conflict_style=row.get("conflict_style", ""),
                 )
-        if bots:
-            return bots
-    personas = load_personas()
-    bots: List[Bot] = []
-    for i in range(BOT_COUNT):
-        persona = personas[i % len(personas)]
-        bots.append(
-            Bot(
-                name=f"bot_{i+1:03d}",
-                persona=persona["name"],
-                style=persona.get("style", ""),
-                prompt=persona.get("prompt", ""),
-                max_escalation=int(persona.get("max_escalation", 3)),
-                tic=persona.get("tic", ""),
-                stubbornness=float(persona.get("stubbornness", 0.6)),
-                group=persona.get("group", ""),
-                artifact="",
             )
-        )
-    return bots
+        return bots
+    except Exception as e:
+        log(f"Failed to load bots from API: {e}")
+        return []
+
+
+def load_bots() -> List[Bot]:
+    """Fallback for sync loading - not used in main loop."""
+    return []
 
 
 async def api_get(client: httpx.AsyncClient, path: str) -> Any:
@@ -845,13 +825,28 @@ async def run_bot(
 
 
 async def main() -> None:
-    bots = load_bots()
-
     sem = asyncio.Semaphore(MAX_CONCURRENCY)
+    active_bot_names: set[str] = set()
+
     async with httpx.AsyncClient(timeout=20) as http_client:
         openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
-        tasks = [run_bot(bot, http_client, openai_client, sem) for bot in bots]
-        await asyncio.gather(*tasks)
+
+        while True:
+            # Fetch current bots from API
+            bots = await load_bots_from_api(http_client)
+
+            # Start any new bots that aren't already running
+            for bot in bots:
+                if bot.name not in active_bot_names:
+                    active_bot_names.add(bot.name)
+                    log(f"[{bot.name}] Starting bot (Team {bot.group}, artifact: {bot.artifact})")
+                    asyncio.create_task(run_bot(bot, http_client, openai_client, sem))
+
+            if not bots:
+                log("No bots registered yet. Waiting for students to sign up...")
+
+            # Check for new bots every 10 seconds
+            await asyncio.sleep(10)
 
 
 if __name__ == "__main__":
