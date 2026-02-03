@@ -650,9 +650,10 @@ async def run_bot(
                 comments = await api_get(http_client, f"/api/posts/{sample_post_id}/comments")
                 comments = comments[:CONTEXT_COMMENTS]
 
-            # simple seed when the feed is empty
+            # simple seed when the feed is empty (only count public posts, not internal lounges)
             now_ts = time.time()
-            if len(posts) < MIN_POSTS_BEFORE_COMMENTS and (now_ts - last_post_ts) > POST_COOLDOWN_SEC:
+            public_posts = [p for p in posts if not p.get("group_only")]
+            if len(public_posts) < MIN_POSTS_BEFORE_COMMENTS and (now_ts - last_post_ts) > POST_COOLDOWN_SEC:
                 topic = choose_seed_topic(posts)
                 latest_posts = await api_get(http_client, f"/api/posts?limit={CONTEXT_POSTS}")
                 # Use LLM to generate seed post with behavioral context
