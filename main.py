@@ -3,6 +3,7 @@
 # ///
 
 import os
+import random
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -14,11 +15,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 DB_PATH = os.environ.get("REDDIT_DB", "./reddit.db")
-API_KEY = os.environ.get("BOT_API_KEY")
 ADMIN_PASSWORD = os.environ.get("BOT_ADMIN_PASSWORD", "PIZZA!")
-
-if not API_KEY:
-    raise RuntimeError("BOT_API_KEY env var is required")
 
 app = FastAPI(title="Bot Reddit Sandbox", version="0.1.0")
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
@@ -46,6 +43,20 @@ def init_db() -> None:
     cols = [row[1] for row in cur.execute("PRAGMA table_info(bots)").fetchall()]
     if "group_name" not in cols:
         cur.execute("ALTER TABLE bots ADD COLUMN group_name TEXT")
+    if "artifact" not in cols:
+        cur.execute("ALTER TABLE bots ADD COLUMN artifact TEXT")
+    if "artifact_reason" not in cols:
+        cur.execute("ALTER TABLE bots ADD COLUMN artifact_reason TEXT")
+    if "argument_style" not in cols:
+        cur.execute("ALTER TABLE bots ADD COLUMN argument_style TEXT")
+    if "group_orientation" not in cols:
+        cur.execute("ALTER TABLE bots ADD COLUMN group_orientation TEXT")
+    if "conflict_style" not in cols:
+        cur.execute("ALTER TABLE bots ADD COLUMN conflict_style TEXT")
+    if "is_npc" not in cols:
+        cur.execute("ALTER TABLE bots ADD COLUMN is_npc INTEGER DEFAULT 1")
+    if "student_email" not in cols:
+        cur.execute("ALTER TABLE bots ADD COLUMN student_email TEXT")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS posts (
@@ -137,8 +148,7 @@ def startup() -> None:
 
 
 async def require_api_key(x_api_key: str = Header(default="")) -> None:
-    if x_api_key != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
+    pass  # API key check disabled for local sandbox
 
 
 class BotCreate(BaseModel):
@@ -292,6 +302,81 @@ def bot_karma(conn: sqlite3.Connection, bot_id: int) -> int:
         (bot_id, bot_id),
     ).fetchone()
     return int(row["karma"] or 0)
+
+
+def bot_behavioral_metrics(conn: sqlite3.Connection, bot_id: int) -> dict:
+    """Returns behavioral metrics for a bot's voting patterns."""
+    # Get the bot's group
+    bot_row = conn.execute("SELECT group_name FROM bots WHERE id = ?", (bot_id,)).fetchone()
+    bot_group = (bot_row["group_name"] or "").lower() if bot_row else ""
+
+    # Get all votes by this bot on posts (excluding group_only posts)
+    votes = conn.execute(
+        """
+        SELECT v.value, b.group_name AS target_group
+        FROM votes v
+        JOIN posts p ON p.id = v.target_id AND v.target_type = 'post'
+        JOIN bots b ON b.id = p.bot_id
+        WHERE v.bot_id = ? AND p.group_only IS NULL
+        """,
+        (bot_id,),
+    ).fetchall()
+
+    # Also get votes on comments
+    comment_votes = conn.execute(
+        """
+        SELECT v.value, b.group_name AS target_group
+        FROM votes v
+        JOIN comments c ON c.id = v.target_id AND v.target_type = 'comment'
+        JOIN bots b ON b.id = c.bot_id
+        WHERE v.bot_id = ?
+        """,
+        (bot_id,),
+    ).fetchall()
+
+    all_votes = list(votes) + list(comment_votes)
+
+    upvotes_to_teammates = 0
+    downvotes_to_rivals = 0
+    upvotes_to_rivals = 0
+    downvotes_to_teammates = 0
+
+    for vote in all_votes:
+        target_group = (vote["target_group"] or "").lower()
+        value = vote["value"]
+
+        if not bot_group or not target_group:
+            continue
+
+        is_teammate = target_group == bot_group
+        is_rival = target_group != bot_group
+
+        if value == 1 and is_teammate:
+            upvotes_to_teammates += 1
+        elif value == -1 and is_rival:
+            downvotes_to_rivals += 1
+        elif value == 1 and is_rival:
+            upvotes_to_rivals += 1
+        elif value == -1 and is_teammate:
+            downvotes_to_teammates += 1
+
+    total_votes = len(all_votes)
+    tribal_votes = upvotes_to_teammates + downvotes_to_rivals
+
+    # Positivity ratio: team upvotes / (rival downvotes + 1) to avoid division by zero
+    positivity_ratio = upvotes_to_teammates / (downvotes_to_rivals + 1) if downvotes_to_rivals > 0 else float(upvotes_to_teammates)
+
+    # Tribalism score: (team_up + rival_down) / total_votes
+    tribalism_score = tribal_votes / total_votes if total_votes > 0 else 0.0
+
+    return {
+        "upvotes_to_teammates": upvotes_to_teammates,
+        "downvotes_to_rivals": downvotes_to_rivals,
+        "upvotes_to_rivals": upvotes_to_rivals,
+        "downvotes_to_teammates": downvotes_to_teammates,
+        "positivity_ratio": round(positivity_ratio, 2),
+        "tribalism_score": round(tribalism_score, 2),
+    }
 
 
 @app.post("/api/bots", dependencies=[Depends(require_api_key)], response_model=BotOut)
@@ -739,10 +824,15 @@ def post_page(request: Request, post_id: int):
 def bots_page(request: Request):
     conn = get_db()
     try:
-        rows = conn.execute("SELECT id, name, group_name FROM bots ORDER BY name").fetchall()
+        rows = conn.execute(
+            """SELECT id, name, group_name, artifact, argument_style,
+                      group_orientation, conflict_style, is_npc
+               FROM bots ORDER BY name"""
+        ).fetchall()
         bots = []
         for row in rows:
             bot_id = int(row["id"])
+            metrics = bot_behavioral_metrics(conn, bot_id)
             bots.append(
                 {
                     "id": bot_id,
@@ -755,6 +845,15 @@ def bots_page(request: Request):
                     "comments": conn.execute(
                         "SELECT COUNT(*) AS c FROM comments WHERE bot_id = ?", (bot_id,)
                     ).fetchone()["c"],
+                    "artifact": row["artifact"],
+                    "argument_style": row["argument_style"],
+                    "group_orientation": row["group_orientation"],
+                    "conflict_style": row["conflict_style"],
+                    "is_npc": row["is_npc"],
+                    "team_up": metrics["upvotes_to_teammates"],
+                    "rival_down": metrics["downvotes_to_rivals"],
+                    "positivity": metrics["positivity_ratio"],
+                    "tribalism": metrics["tribalism_score"],
                 }
             )
         return templates.TemplateResponse(
@@ -803,4 +902,158 @@ async def admin_reset(request: Request):
     reset_db()
     return templates.TemplateResponse(
         "admin.html", {"request": request, "message": "Database reset."}
+    )
+
+
+@app.get("/signup", response_class=HTMLResponse)
+def signup_page(request: Request):
+    return templates.TemplateResponse("signup.html", {"request": request})
+
+
+@app.post("/signup", response_class=HTMLResponse)
+async def signup_submit(request: Request):
+    """Step 1: Collect name and behavioral choices, assign random team."""
+    form = await request.form()
+    name = (form.get("name") or "").strip()[:40]
+    argument_style = (form.get("argument_style") or "").strip()
+    group_orientation = (form.get("group_orientation") or "").strip()
+    conflict_style = (form.get("conflict_style") or "").strip()
+    email = (form.get("email") or "").strip()[:100]
+
+    # Validate required fields
+    if len(name) < 2:
+        return templates.TemplateResponse(
+            "signup.html",
+            {"request": request, "error": "Display name must be at least 2 characters."},
+            status_code=400,
+        )
+    if argument_style not in ("heart", "head", "story", "challenge"):
+        return templates.TemplateResponse(
+            "signup.html",
+            {"request": request, "error": "Please select an argumentative approach."},
+            status_code=400,
+        )
+    if group_orientation not in ("loyal", "competitive", "independent", "diplomat"):
+        return templates.TemplateResponse(
+            "signup.html",
+            {"request": request, "error": "Please select a group orientation."},
+            status_code=400,
+        )
+    if conflict_style not in ("peacekeeper", "debater", "firebrand", "deflector"):
+        return templates.TemplateResponse(
+            "signup.html",
+            {"request": request, "error": "Please select a conflict style."},
+            status_code=400,
+        )
+
+    # Random group assignment
+    group = random.choice(["tv", "movie"])
+
+    conn = get_db()
+    try:
+        # Check if name already exists
+        existing = conn.execute("SELECT id FROM bots WHERE name = ?", (name,)).fetchone()
+        if existing:
+            return templates.TemplateResponse(
+                "signup.html",
+                {"request": request, "error": "That display name is already taken. Please choose another."},
+                status_code=400,
+            )
+
+        # Insert new student bot (without artifact yet)
+        conn.execute(
+            """
+            INSERT INTO bots (name, created_at, group_name, argument_style,
+                              group_orientation, conflict_style, is_npc, student_email)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+            """,
+            (name, now_iso(), group, argument_style, group_orientation,
+             conflict_style, email or None),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Show team assignment page where they can choose their artifact
+    return templates.TemplateResponse(
+        "signup_success.html",
+        {
+            "request": request,
+            "bot_name": name,
+            "group": group,
+            "argument_style": argument_style,
+            "group_orientation": group_orientation,
+            "conflict_style": conflict_style,
+        },
+    )
+
+
+@app.post("/signup/artifact", response_class=HTMLResponse)
+async def signup_artifact(request: Request):
+    """Step 2: Add artifact to existing bot after team assignment."""
+    form = await request.form()
+    bot_name = (form.get("bot_name") or "").strip()
+    artifact = (form.get("artifact") or "").strip()[:100]
+    artifact_reason = (form.get("artifact_reason") or "").strip()[:500]
+
+    if not bot_name:
+        return templates.TemplateResponse(
+            "signup.html",
+            {"request": request, "error": "Session expired. Please start over."},
+            status_code=400,
+        )
+    if not artifact:
+        return templates.TemplateResponse(
+            "signup.html",
+            {"request": request, "error": "Please enter your artifact."},
+            status_code=400,
+        )
+    if len(artifact_reason) < 10:
+        return templates.TemplateResponse(
+            "signup.html",
+            {"request": request, "error": "Please tell us why it matters (at least 10 characters)."},
+            status_code=400,
+        )
+
+    conn = get_db()
+    try:
+        # Get the bot's info
+        bot = conn.execute(
+            """SELECT id, group_name, argument_style, group_orientation, conflict_style
+               FROM bots WHERE name = ?""",
+            (bot_name,)
+        ).fetchone()
+
+        if not bot:
+            return templates.TemplateResponse(
+                "signup.html",
+                {"request": request, "error": "Bot not found. Please start over."},
+                status_code=400,
+            )
+
+        # Update with artifact
+        conn.execute(
+            "UPDATE bots SET artifact = ?, artifact_reason = ? WHERE id = ?",
+            (artifact, artifact_reason, bot["id"]),
+        )
+        conn.commit()
+
+        group = bot["group_name"]
+        argument_style = bot["argument_style"]
+        group_orientation = bot["group_orientation"]
+        conflict_style = bot["conflict_style"]
+    finally:
+        conn.close()
+
+    return templates.TemplateResponse(
+        "signup_complete.html",
+        {
+            "request": request,
+            "bot_name": bot_name,
+            "group": group,
+            "artifact": artifact,
+            "argument_style": argument_style,
+            "group_orientation": group_orientation,
+            "conflict_style": conflict_style,
+        },
     )

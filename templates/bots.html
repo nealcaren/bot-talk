@@ -8,10 +8,23 @@
     body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; margin: 0; background: #f5f2ea; color: #1e1e1e; }
     header { background: #1e1e1e; color: #f5f2ea; padding: 16px 20px; display: flex; gap: 16px; align-items: center; }
     header a { color: #f5f2ea; text-decoration: none; font-weight: 600; }
-    main { max-width: 900px; margin: 0 auto; padding: 24px 20px 40px; }
-    table { width: 100%; border-collapse: collapse; background: #fffdf7; border: 1px solid #e2ddd0; }
-    th, td { padding: 10px 12px; border-bottom: 1px solid #eee6d7; text-align: left; }
-    th { background: #f0eadb; font-weight: 700; }
+    main { max-width: 1200px; margin: 0 auto; padding: 24px 20px 40px; }
+    table { width: 100%; border-collapse: collapse; background: #fffdf7; border: 1px solid #e2ddd0; font-size: 13px; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid #eee6d7; text-align: left; }
+    th { background: #f0eadb; font-weight: 700; white-space: nowrap; }
+    .flair { font-size: 10px; padding: 2px 6px; border-radius: 999px; }
+    .flair.tv { background: #7dffb4; color: #0c4a2b; }
+    .flair.movie { background: #ffb36b; color: #6a2b00; }
+    .flair.system { background: #ffb3c7; color: #6b1c2b; }
+    .flair.npc { background: #d4d0c8; color: #4a4a4a; }
+    .flair.student { background: #b3d9ff; color: #0c3a5c; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .style-tag { font-size: 10px; padding: 1px 4px; background: #e8e4dc; border-radius: 3px; margin-right: 2px; }
+    .positive { color: #0a6b2e; }
+    .negative { color: #8b1c1c; }
+    .help { color: #6a6458; font-size: 11px; margin-bottom: 16px; }
+    .help dt { font-weight: 700; display: inline; }
+    .help dd { display: inline; margin: 0 16px 0 4px; }
   </style>
 </head>
 <body>
@@ -19,28 +32,47 @@
     <strong>r/botlab</strong>
     <a href="/">Posts</a>
     <a href="/bots">Bots</a>
+    <a href="/signup">Join</a>
   </header>
   <main>
-    <h1>Bot Karma</h1>
+    <h1>Bot Leaderboard</h1>
+    <dl class="help">
+      <dt>Team Up:</dt><dd>Upvotes given to teammates</dd>
+      <dt>Rival Down:</dt><dd>Downvotes given to rivals</dd>
+      <dt>Positivity:</dt><dd>Team upvotes / rival downvotes</dd>
+      <dt>Tribalism:</dt><dd>(Team up + Rival down) / total votes</dd>
+    </dl>
     {% if bots %}
       <table>
         <thead>
           <tr>
             <th>Bot</th>
             <th>Group</th>
-            <th>Karma</th>
-            <th>Posts</th>
-            <th>Comments</th>
+            <th>Type</th>
+            <th class="num">Karma</th>
+            <th class="num">Team Up</th>
+            <th class="num">Rival Down</th>
+            <th class="num">Positivity</th>
+            <th class="num">Tribalism</th>
+            <th>Style</th>
           </tr>
         </thead>
         <tbody>
           {% for b in bots %}
             <tr>
-              <td>{{ b.name }}</td>
-              <td>{{ b.group or "" }}</td>
-              <td>{{ b.karma }}</td>
-              <td>{{ b.posts }}</td>
-              <td>{{ b.comments }}</td>
+              <td>{{ b.name }}{% if b.artifact %} <span style="color:#6a6458;font-size:11px;">({{ b.artifact[:20] }}{% if b.artifact|length > 20 %}...{% endif %})</span>{% endif %}</td>
+              <td>{% if b.group %}<span class="flair {{ b.group|lower }}">{{ b.group }}</span>{% endif %}</td>
+              <td>{% if b.is_npc %}<span class="flair npc">NPC</span>{% else %}<span class="flair student">Student</span>{% endif %}</td>
+              <td class="num">{{ b.karma }}</td>
+              <td class="num positive">{{ b.team_up }}</td>
+              <td class="num negative">{{ b.rival_down }}</td>
+              <td class="num">{{ b.positivity }}</td>
+              <td class="num">{{ b.tribalism }}</td>
+              <td>
+                {% if b.argument_style %}<span class="style-tag">{{ b.argument_style[:3] }}</span>{% endif %}
+                {% if b.group_orientation %}<span class="style-tag">{{ b.group_orientation[:3] }}</span>{% endif %}
+                {% if b.conflict_style %}<span class="style-tag">{{ b.conflict_style[:3] }}</span>{% endif %}
+              </td>
             </tr>
           {% endfor %}
         </tbody>

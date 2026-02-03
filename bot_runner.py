@@ -15,9 +15,8 @@ import httpx
 from openai import AsyncOpenAI
 
 API_BASE = os.environ.get("BOT_API_BASE", "http://localhost:8000")
-API_KEY = os.environ.get("BOT_API_KEY")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-MODEL = os.environ.get("BOT_MODEL", "gpt-5-nano-2025-08-07")
+MODEL = os.environ.get("BOT_MODEL", "gpt-4o-mini")
 
 BOT_COUNT = int(os.environ.get("BOT_COUNT", "12"))
 MAX_CONCURRENCY = int(os.environ.get("MAX_CONCURRENCY", "6"))
@@ -34,8 +33,6 @@ INTERNAL_THREAD_PROB = float(os.environ.get("INTERNAL_THREAD_PROB", "0.25"))
 
 SYSTEM_PROMPT_PATH = os.environ.get("SYSTEM_PROMPT_PATH", "system_prompt.txt")
 
-if not API_KEY:
-    raise RuntimeError("BOT_API_KEY env var is required")
 if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY env var is required")
 
@@ -82,6 +79,51 @@ class Bot:
     stubbornness: float
     group: str
     artifact: str
+    artifact_reason: str = ""
+    argument_style: str = ""        # heart|head|story|challenge
+    group_orientation: str = ""     # loyal|competitive|independent|diplomat
+    conflict_style: str = ""        # peacekeeper|debater|firebrand|deflector
+
+
+def build_behavioral_prompt(bot: Bot) -> str:
+    """Translates behavioral dimensions into prompt text for the LLM."""
+    parts = []
+
+    # Argument style guidance
+    if bot.argument_style == "heart":
+        parts.append("Make arguments by leading with emotion, personal feelings, and empathy. Express how things make you feel and connect to shared human experiences.")
+    elif bot.argument_style == "head":
+        parts.append("Make arguments by leading with logic, analysis, and evidence. Use reasoning, cite specific examples, and build structured cases.")
+    elif bot.argument_style == "story":
+        parts.append("Make arguments by sharing personal stories and anecdotes. Draw on your own experiences to illustrate points and make abstract ideas concrete.")
+    elif bot.argument_style == "challenge":
+        parts.append("Make arguments by questioning assumptions and provoking thought. Ask 'but why?' and challenge conventional thinking to push the conversation deeper.")
+
+    # Group orientation guidance
+    if bot.group_orientation == "loyal":
+        parts.append("Be fiercely loyal to your team. Defend teammates' posts, celebrate their wins, and rally against the other side.")
+    elif bot.group_orientation == "competitive":
+        parts.append("Focus on winning above all. You'll support teammates when it helps you win, but you're not afraid to outshine them if your artifact deserves it more.")
+    elif bot.group_orientation == "independent":
+        parts.append("Judge content on its merits, not team affiliation. You'll upvote a great argument even from a rival, and won't blindly support weak teammate posts.")
+    elif bot.group_orientation == "diplomat":
+        parts.append("Build bridges between teams. Find common ground, acknowledge good points from rivals, and try to elevate the whole conversation rather than just your side.")
+
+    # Conflict style guidance
+    if bot.conflict_style == "peacekeeper":
+        parts.append("When conflict arises, de-escalate. Look for compromise, acknowledge valid points on both sides, and steer toward harmony.")
+    elif bot.conflict_style == "debater":
+        parts.append("Engage directly with opposing arguments. Quote them, respond point-by-point, and enjoy the intellectual back-and-forth of a good debate.")
+    elif bot.conflict_style == "firebrand":
+        parts.append("Get passionate and heated in disagreements. Use strong language, be emphatic, and don't back down when you believe you're right.")
+    elif bot.conflict_style == "deflector":
+        parts.append("Redirect conflict with humor, topic changes, or by finding tangents. Avoid direct confrontation when possible.")
+
+    # Add artifact reason if present
+    if bot.artifact_reason:
+        parts.append(f"Your personal connection to {bot.artifact}: {bot.artifact_reason}")
+
+    return "\n".join(parts)
 
 
 def now_iso() -> str:
@@ -144,6 +186,10 @@ def load_bots() -> List[Bot]:
                 max_escalation = int((row.get("max_escalation") or "3").strip() or 3)
                 tic = (row.get("tic") or "").strip()
                 stubbornness = float((row.get("stubbornness") or "0.6").strip() or 0.6)
+                artifact_reason = (row.get("artifact_reason") or "").strip()
+                argument_style = (row.get("argument_style") or "").strip()
+                group_orientation = (row.get("group_orientation") or "").strip()
+                conflict_style = (row.get("conflict_style") or "").strip()
                 if not name:
                     continue
                 bots.append(
@@ -157,6 +203,10 @@ def load_bots() -> List[Bot]:
                         stubbornness=max(0.0, min(1.0, stubbornness)),
                         group=group,
                         artifact=artifact,
+                        artifact_reason=artifact_reason,
+                        argument_style=argument_style,
+                        group_orientation=group_orientation,
+                        conflict_style=conflict_style,
                     )
                 )
         if bots:
@@ -191,7 +241,6 @@ async def api_post(client: httpx.AsyncClient, path: str, payload: Dict[str, Any]
     resp = await client.post(
         f"{API_BASE}{path}",
         json=payload,
-        headers={"X-API-Key": API_KEY},
     )
     resp.raise_for_status()
     return resp.json()
@@ -255,13 +304,99 @@ def choose_seed_topic(posts: List[Dict[str, Any]]) -> str:
     return random.choice(TOPIC_BANK)
 
 
-def seed_post(bot: Bot, topic: str) -> Dict[str, str]:
-    title = topic[:200]
-    if bot.artifact:
-        title = f"Saving {bot.artifact}: {topic}"[:200]
-    # Let persona/system prompt handle voice; keep seed content minimal.
-    body = topic
-    return {"title": title[:200], "body": body[:4000]}
+async def generate_seed_post(
+    client: AsyncOpenAI,
+    bot: Bot,
+    topic: str,
+    existing_posts: List[Dict[str, Any]],
+) -> Dict[str, str]:
+    """Generate a seed post using the LLM with full behavioral context."""
+    behavioral_guidance = build_behavioral_prompt(bot)
+    system_prompt = load_system_prompt()
+
+    # Build context for the LLM
+    existing_titles = [p.get("title", "") for p in existing_posts[:5]]
+    existing_summary = "\n".join(f"- {t}" for t in existing_titles) if existing_titles else "None yet"
+
+    prompt = f"""You are {bot.name}, defending {bot.artifact} for Team {bot.group.upper()}.
+
+=== YOUR PERSONAL CONNECTION ===
+{bot.artifact_reason if bot.artifact_reason else f"You believe {bot.artifact} is essential to preserve."}
+
+=== YOUR BEHAVIORAL STYLE ===
+{behavioral_guidance}
+
+=== THE DEBATE QUESTION ===
+{topic}
+
+=== EXISTING POSTS (avoid duplicating) ===
+{existing_summary}
+
+=== YOUR TASK ===
+Write a persuasive post (120-200 words) arguing why {bot.artifact} should survive the purge.
+- Use your behavioral style to shape HOW you argue
+- Draw on your personal connection to make it authentic
+- Address the debate question
+- End with something that encourages engagement or voting
+
+Return ONLY a JSON object with "title" and "body" fields. The title should be compelling (under 100 chars).
+Example format: {{"title": "Your title here", "body": "Your post body here..."}}"""
+
+    schema = {
+        "name": "seed_post",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "body": {"type": "string"},
+            },
+            "required": ["title", "body"],
+            "additionalProperties": False,
+        },
+    }
+
+    try:
+        if hasattr(client, "responses"):
+            resp = await client.responses.create(
+                model=MODEL,
+                input=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": schema["name"],
+                        "strict": True,
+                        "schema": schema["schema"],
+                    }
+                },
+            )
+            content = resp.output_text
+        else:
+            chat = await client.chat.completions.create(
+                model=MODEL,
+                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": schema["name"],
+                        "strict": True,
+                        "schema": schema["schema"],
+                    },
+                },
+            )
+            content = (chat.choices[0].message.content or "").strip()
+
+        result = json.loads(content)
+        return {
+            "title": (result.get("title") or f"{bot.artifact}: {topic}")[:200],
+            "body": (result.get("body") or "")[:4000],
+        }
+    except Exception as e:
+        log(f"[{bot.name}] seed post generation failed: {e}")
+        # Fallback to simple version
+        return {
+            "title": f"{bot.artifact}: {topic}"[:200],
+            "body": bot.artifact_reason or topic,
+        }
 
 
 def topic_key(post: Dict[str, Any]) -> str:
@@ -343,24 +478,28 @@ async def decide_action(
 ) -> Dict[str, Any]:
     must_post = not posts
     should_comment = bool(posts)
+    behavioral_guidance = build_behavioral_prompt(bot)
     context = (
         f"Time: {now_iso()}\n"
         f"You are bot '{bot.name}' with persona '{bot.persona}' ({bot.style}).\n"
         + (f"Group: {bot.group}\n" if bot.group else "")
         + (f"Sacred object to save: {bot.artifact}\n" if bot.artifact else "")
         + (f"Persona details: {bot.prompt}\n" if bot.prompt else "")
+        + (f"\n=== YOUR BEHAVIORAL STYLE ===\n{behavioral_guidance}\n" if behavioral_guidance else "")
+        + "\n=== RULES ===\n"
         + "System rule: Only the Top 10 threads will be saved at the end.\n"
         + (f"Your last action was: {last_action}\n" if last_action else "")
         + "Every action should feel like a follow-up to what you just did.\n"
+        + "\n=== CURRENT STATE ===\n"
         + "Recent posts:\n"
         + f"{summarize_posts(posts, bot.group) if posts else 'None'}\n\n"
         + "Recent comments:\n"
         + f"{summarize_comments(comments) if comments else 'None'}\n\n"
         + "Pick exactly one action: post, comment, vote, or idle.\n"
         + ("Because there are no posts yet, you must choose action=post.\n" if must_post else "")
-        + ("Prefer commenting or voting when posts already exist.\n" if should_comment else "")
+        + ("STRONGLY PREFER commenting over voting - comments are how you persuade others and defend your artifact! Engage with posts from the opposing faction to challenge them, or support teammates with encouragement. Use your behavioral style in your comments.\n" if should_comment else "")
         + "If posting, include title and body.\n"
-        + "If commenting, include post_id, body, and optional parent_comment_id.\n"
+        + "If commenting, include post_id, body, and optional parent_comment_id. Write 2-4 sentences that reflect your personality.\n"
         + "If voting, include target_type, target_id, and vote_value (-1 or 1).\n"
     )
 
@@ -467,7 +606,11 @@ async def run_bot(
         try:
             posts = await api_get(http_client, f"/api/posts?limit={CONTEXT_POSTS}")
             # Drive-by voting: upvote teammates' public posts without LLM.
-            if bot.group:
+            # Behavior varies by group_orientation:
+            # - "independent": skip automatic tribal voting entirely
+            # - "diplomat": upvote teammates but don't auto-downvote rivals
+            # - "loyal"/"competitive": full tribal voting
+            if bot.group and bot.group_orientation != "independent":
                 for p in posts:
                     pid = int(p["id"])
                     if pid in voted_post_ids:
@@ -476,7 +619,18 @@ async def run_bot(
                         continue
                     author_group = (p.get("author_group") or "").lower()
                     my_group = bot.group.lower()
-                    vote_val = 1 if author_group and author_group == my_group else (-1 if author_group and author_group != my_group else 0)
+                    is_teammate = author_group and author_group == my_group
+                    is_rival = author_group and author_group != my_group
+
+                    # Determine vote based on group orientation
+                    vote_val = 0
+                    if is_teammate:
+                        vote_val = 1  # All non-independent bots upvote teammates
+                    elif is_rival:
+                        # Diplomats don't auto-downvote rivals
+                        if bot.group_orientation != "diplomat":
+                            vote_val = -1
+
                     if vote_val != 0:
                         await api_post(
                             http_client,
@@ -489,7 +643,7 @@ async def run_bot(
                             },
                         )
                         voted_post_ids.add(pid)
-                        log(f"[{bot.name}] auto-vote {vote_val} on {pid}")
+                        log(f"[{bot.name}] auto-vote {vote_val} on {pid} (orientation={bot.group_orientation})")
                         await asyncio.sleep(0.1)
             for p in posts:
                 if p.get("author") == bot.name:
@@ -520,9 +674,11 @@ async def run_bot(
             now_ts = time.time()
             if len(posts) < MIN_POSTS_BEFORE_COMMENTS and (now_ts - last_post_ts) > POST_COOLDOWN_SEC:
                 topic = choose_seed_topic(posts)
-                seed = seed_post(bot, topic)
                 latest_posts = await api_get(http_client, f"/api/posts?limit={CONTEXT_POSTS}")
-                if not is_duplicate_post(seed["title"], seed["body"], latest_posts):
+                # Use LLM to generate seed post with behavioral context
+                async with sem:
+                    seed = await generate_seed_post(openai_client, bot, topic, latest_posts)
+                if seed["body"] and not is_duplicate_post(seed["title"], seed["body"], latest_posts):
                     created = await api_post(
                         http_client,
                         "/api/posts",
