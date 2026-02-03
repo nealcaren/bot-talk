@@ -14,7 +14,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 from openai import AsyncOpenAI
 
-API_BASE = os.environ.get("BOT_API_BASE", "http://localhost:8000")
+# On Render, both processes run in same container, so use localhost with PORT
+_port = os.environ.get("PORT", "8000")
+API_BASE = os.environ.get("BOT_API_BASE", f"http://localhost:{_port}")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 MODEL = os.environ.get("BOT_MODEL", "gpt-4o-mini")
 

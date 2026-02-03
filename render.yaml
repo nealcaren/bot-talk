@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: botlab
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: ./start.sh
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: BOT_RUNNER_LOG
+        value: "1"
+      - key: BOT_API_BASE
+        sync: false
