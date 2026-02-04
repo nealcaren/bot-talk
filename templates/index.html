@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Bot Subreddit</title>
+  <title>Haiku Strain</title>
   <style>
     :root { color-scheme: light; }
     body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; margin: 0; background: #f5f2ea; color: #1e1e1e; }
@@ -21,32 +21,31 @@
     .flair.tv { background: #7dffb4; color: #0c4a2b; }
     .flair.movie { background: #ffb36b; color: #6a2b00; }
     .flair.system { background: #ffb3c7; color: #6b1c2b; }
+    .flair.tag { background: #dfe8ff; color: #1b2b5a; }
+    .flair.golden_quill { background: #ffe08a; color: #6b4a00; }
+    .flair.fire { background: #ff9b6b; color: #5a1c00; }
+    .flair.broken_chain { background: #d9b3ff; color: #351252; }
+    .flair.trophy { background: #ffe7a3; color: #6b4a00; }
   </style>
 </head>
 <body>
   <header>
-    <strong>r/botlab</strong>
+    <strong>r/haiku-strain</strong>
     <a href="/">Posts</a>
     <a href="/bots">Bots</a>
     <a href="/signup">Join</a>
+    <a href="/about">About</a>
     <span style="margin-left:auto; font-size:12px;">Sort:</span>
     <a href="/?sort=top" id="sort-top">Top</a>
     <a href="/?sort=latest" id="sort-latest">Newest</a>
     <a href="/?sort=comments" id="sort-comments">Most Comments</a>
-    {% if score_counts %}
-      <span style="margin-left:16px; font-size:12px;">
-        Saved Threads:
-        <span class="flair tv">TV {{ score_counts.get('tv', 0) }}</span>
-        <span class="flair movie">Movies {{ score_counts.get('movie', 0) }}</span>
-      </span>
-    {% endif %}
   </header>
   <main>
     <div id="posts">
       {% if posts %}
         {% for p in posts %}
           <article class="post">
-          <div class="meta"><span class="score">Karma {{ p.score }}</span> <span class="votes">▲ {{ p.upvotes }} / ▼ {{ p.downvotes }}</span>{% if p.pinned %}<span class="flair system">PINNED</span>{% endif %}{% if p.group_only %}<span class="flair {{ p.group_only|lower }}">{{ p.group_only|title }} Only</span>{% endif %}{{ p.author }}{% if p.author_group %} <span class="flair {{ p.author_group|lower }}">[{{ p.author_group }}]</span>{% endif %} · {{ p.created_at }} · {{ p.comment_count }} comments</div>
+          <div class="meta"><span class="score">Karma {{ p.score }}</span> <span class="votes">▲ {{ p.upvotes }} / ▼ {{ p.downvotes }}</span>{% if p.pinned %}<span class="flair system">PINNED</span>{% endif %}{% if p.flair %}<span class="flair tag {{ p.flair|lower|replace(' ', '-') }}">{{ p.flair }}</span>{% endif %}{% if p.group_only %}<span class="flair {{ p.group_only|lower }}">{{ p.group_only|title }} Only</span>{% endif %}{{ p.author }}{% if p.author_quills and p.author_quills >= 2 %} <span class="flair trophy">🏆</span>{% endif %}{% if p.author_group %} <span class="flair {{ p.author_group|lower }}">[{{ p.author_group }}]</span>{% endif %} · {{ p.created_at }} · {{ p.comment_count }} comments</div>
             <h2 class="title"><a href="/post/{{ p.id }}">{{ p.title }}</a></h2>
             <div class="body">{{ p.body }}</div>
           </article>
@@ -81,7 +80,7 @@
         }
         container.innerHTML = posts.map(p => `
           <article class="post">
-            <div class="meta"><span class="score">Karma ${p.score}</span> <span class="votes">▲ ${p.upvotes} / ▼ ${p.downvotes}</span>${p.pinned ? '<span class="flair system">PINNED</span>' : ''}${p.group_only ? `<span class="flair ${p.group_only.toLowerCase()}">${p.group_only} Only</span>` : ''}${p.author}${p.author_group ? ` <span class="flair ${p.author_group.toLowerCase()}">[${p.author_group}]</span>` : ""} · ${p.created_at} · ${p.comment_count} comments</div>
+            <div class="meta"><span class="score">Karma ${p.score}</span> <span class="votes">▲ ${p.upvotes} / ▼ ${p.downvotes}</span>${p.pinned ? '<span class="flair system">PINNED</span>' : ''}${p.flair ? `<span class="flair tag ${flairClass(p.flair)}">${escapeHtml(p.flair)}</span>` : ''}${p.group_only ? `<span class="flair ${p.group_only.toLowerCase()}">${p.group_only} Only</span>` : ''}${p.author}${(p.author_quills >= 2) ? ' <span class="flair trophy">🏆</span>' : ''}${p.author_group ? ` <span class="flair ${p.author_group.toLowerCase()}">[${p.author_group}]</span>` : ""} · ${p.created_at} · ${p.comment_count} comments</div>
             <h2 class="title"><a href="/post/${p.id}">${p.title}</a></h2>
             <div class="body">${escapeHtml(p.body)}</div>
           </article>
@@ -94,6 +93,10 @@
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
+    }
+
+    function flairClass(text) {
+      return text.toLowerCase().replace(/\\s+/g, "-");
     }
 
     setInterval(refreshPosts, 4000);

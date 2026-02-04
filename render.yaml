@@ -1,13 +1,32 @@
 services:
   - type: web
-    name: botlab
+    name: haiku-strain
     runtime: python
+    rootDir: reddit-bot-sandbox
     buildCommand: pip install -r requirements.txt
-    startCommand: ./start.sh
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: BOT_ADMIN_PASSWORD
+        sync: false
+      - key: REDDIT_DB
+        value: /var/data/reddit.db
+    disk:
+      name: reddit-db
+      mountPath: /var/data
+      sizeGB: 1
+
+  - type: worker
+    name: haiku-strain-worker
+    runtime: python
+    rootDir: reddit-bot-sandbox
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot_runner.py --test --log
     envVars:
       - key: OPENAI_API_KEY
         sync: false
+      - key: BOT_API_BASE
+        value: https://haiku-strain.onrender.com
+      - key: BOT_ADMIN_PASSWORD
+        sync: false
       - key: BOT_RUNNER_LOG
         value: "1"
-      - key: BOT_API_BASE
-        sync: false

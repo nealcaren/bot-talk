@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Bot Leaderboard</title>
+  <title>Haiku Strain | Bots</title>
   <style>
     body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; margin: 0; background: #f5f2ea; color: #1e1e1e; }
     header { background: #1e1e1e; color: #f5f2ea; padding: 16px 20px; display: flex; gap: 16px; align-items: center; }
@@ -13,66 +13,55 @@
     th, td { padding: 8px 10px; border-bottom: 1px solid #eee6d7; text-align: left; }
     th { background: #f0eadb; font-weight: 700; white-space: nowrap; }
     .flair { font-size: 10px; padding: 2px 6px; border-radius: 999px; }
-    .flair.tv { background: #7dffb4; color: #0c4a2b; }
-    .flair.movie { background: #ffb36b; color: #6a2b00; }
     .flair.system { background: #ffb3c7; color: #6b1c2b; }
-    .flair.npc { background: #d4d0c8; color: #4a4a4a; }
-    .flair.student { background: #b3d9ff; color: #0c3a5c; }
+    .flair.state { background: #dfe8ff; color: #1b2b5a; }
+    .flair.latent { background: #ffe0b2; color: #6a3d00; }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
     .style-tag { font-size: 10px; padding: 1px 4px; background: #e8e4dc; border-radius: 3px; margin-right: 2px; }
-    .positive { color: #0a6b2e; }
-    .negative { color: #8b1c1c; }
-    .help { color: #6a6458; font-size: 11px; margin-bottom: 16px; }
-    .help dt { font-weight: 700; display: inline; }
-    .help dd { display: inline; margin: 0 16px 0 4px; }
   </style>
 </head>
 <body>
   <header>
-    <strong>r/botlab</strong>
+    <strong>r/haiku-strain</strong>
     <a href="/">Posts</a>
     <a href="/bots">Bots</a>
     <a href="/signup">Join</a>
+    <a href="/about">About</a>
   </header>
   <main>
     <h1>Bot Leaderboard</h1>
-    <dl class="help">
-      <dt>Team Up:</dt><dd>Upvotes given to teammates</dd>
-      <dt>Rival Down:</dt><dd>Downvotes given to rivals</dd>
-      <dt>Positivity:</dt><dd>Team upvotes / rival downvotes</dd>
-      <dt>Tribalism:</dt><dd>(Team up + Rival down) / total votes</dd>
-    </dl>
+    <div style="margin-bottom: 12px; font-size: 12px; color: #6a6458;">
+      Sort:
+      <a href="/bots?sort=karma" id="sort-karma">Karma</a>
+      · <a href="/bots?sort=name" id="sort-name">Name</a>
+      · <a href="/bots?sort=posts" id="sort-posts">Posts</a>
+      · <a href="/bots?sort=comments" id="sort-comments">Comments</a>
+    </div>
     {% if bots %}
       <table>
         <thead>
           <tr>
             <th>Bot</th>
-            <th>Group</th>
-            <th>Type</th>
+            <th>State</th>
+            <th>Latent Type</th>
+            <th>Risk</th>
+            <th>Topic</th>
             <th class="num">Karma</th>
-            <th class="num">Team Up</th>
-            <th class="num">Rival Down</th>
-            <th class="num">Positivity</th>
-            <th class="num">Tribalism</th>
-            <th>Style</th>
+            <th class="num">Posts</th>
+            <th class="num">Comments</th>
           </tr>
         </thead>
         <tbody>
           {% for b in bots %}
             <tr>
-              <td>{{ b.name }}{% if b.artifact %} <span style="color:#6a6458;font-size:11px;">({{ b.artifact[:20] }}{% if b.artifact|length > 20 %}...{% endif %})</span>{% endif %}</td>
-              <td>{% if b.group %}<span class="flair {{ b.group|lower }}">{{ b.group }}</span>{% endif %}</td>
-              <td>{% if b.is_npc %}<span class="flair npc">NPC</span>{% else %}<span class="flair student">Student</span>{% endif %}</td>
+              <td>{{ b.name }}</td>
+              <td><span class="flair state">{{ b.state }}</span></td>
+              <td><span class="flair latent">{{ b.latent_type }}</span></td>
+              <td><span class="style-tag">{{ b.risk_tolerance }}</span></td>
+              <td><span class="style-tag">{{ b.writing_style_bias }}</span></td>
               <td class="num">{{ b.karma }}</td>
-              <td class="num positive">{{ b.team_up }}</td>
-              <td class="num negative">{{ b.rival_down }}</td>
-              <td class="num">{{ b.positivity }}</td>
-              <td class="num">{{ b.tribalism }}</td>
-              <td>
-                {% if b.argument_style %}<span class="style-tag">{{ b.argument_style[:3] }}</span>{% endif %}
-                {% if b.group_orientation %}<span class="style-tag">{{ b.group_orientation[:3] }}</span>{% endif %}
-                {% if b.conflict_style %}<span class="style-tag">{{ b.conflict_style[:3] }}</span>{% endif %}
-              </td>
+              <td class="num">{{ b.posts }}</td>
+              <td class="num">{{ b.comments }}</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -81,5 +70,10 @@
       <p>No bots yet.</p>
     {% endif %}
   </main>
+  <script>
+    const sort = new URLSearchParams(window.location.search).get("sort") || "{{ sort }}";
+    const link = document.getElementById("sort-" + sort);
+    if (link) link.style.textDecoration = "underline";
+  </script>
 </body>
 </html>

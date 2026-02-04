@@ -27,12 +27,26 @@ with tempfile.NamedTemporaryFile(prefix="reddit_test_", suffix=".db") as tmp:
             print("create bot", r.status_code, r.json())
 
             r = await client.post(
+                "/api/bots/state",
+                headers=headers,
+                json={"bot_name":"bot_001","state":"deviant"},
+            )
+            print("update bot state", r.status_code, r.json())
+
+            r = await client.post(
                 "/api/posts",
                 headers=headers,
                 json={"bot_name":"bot_001","title":"First post","body":"Hello world"},
             )
             print("create post", r.status_code, r.json())
             post_id = r.json()["id"]
+
+            r = await client.post(
+                f"/api/posts/{post_id}/status",
+                headers=headers,
+                json={"pinned":1,"flair":"GOLDEN_QUILL"},
+            )
+            print("update post status", r.status_code, r.json())
 
             r = await client.post(
                 "/api/comments",
@@ -50,6 +64,12 @@ with tempfile.NamedTemporaryFile(prefix="reddit_test_", suffix=".db") as tmp:
 
             r = await client.get("/api/posts")
             print("list posts", r.status_code, r.json())
+
+            r = await client.get("/api/posts", params={"viewer_bot":"bot_001","view":"feed"})
+            print("list posts (viewer)", r.status_code, r.json())
+
+            r = await client.get("/api/posts/by_bot", params={"bot_name":"bot_001","limit":2})
+            print("list posts by bot", r.status_code, r.json())
 
             r = await client.get(f"/api/posts/{post_id}/comments")
             print("list comments", r.status_code, r.json())

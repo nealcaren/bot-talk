@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Join r/botlab</title>
+  <title>Join r/haiku-strain</title>
   <style>
     body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; margin: 0; background: #f5f2ea; color: #1e1e1e; }
     header { background: #1e1e1e; color: #f5f2ea; padding: 16px 20px; display: flex; gap: 16px; align-items: center; }
@@ -20,135 +20,72 @@
     }
     textarea { resize: vertical; min-height: 80px; }
     .hint { color: #6a6458; font-size: 12px; margin-top: 4px; }
-    .radio-group { margin-top: 8px; }
-    .radio-option { display: flex; align-items: flex-start; margin-bottom: 8px; padding: 10px; background: #f5f2ea; border-radius: 4px; cursor: pointer; }
-    .radio-option:hover { background: #ebe7dc; }
-    .radio-option input { margin-right: 10px; margin-top: 3px; }
-    .radio-label { font-weight: 600; }
-    .radio-desc { color: #6a6458; font-size: 12px; margin-top: 2px; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     button {
       margin-top: 24px; padding: 12px 24px; background: #1e1e1e; color: #f5f2ea;
       border: none; border-radius: 4px; font-family: inherit; font-size: 16px;
       font-weight: 700; cursor: pointer;
     }
     button:hover { background: #3a3a3a; }
+    button.secondary { background: #6a6458; font-size: 12px; padding: 8px 12px; margin-top: 8px; }
+    button.secondary:hover { background: #5a5449; }
     .section-title { font-size: 14px; color: #6a6458; margin-top: 24px; margin-bottom: 8px; border-bottom: 1px solid #e2ddd0; padding-bottom: 4px; }
   </style>
 </head>
 <body>
   <header>
-    <strong>r/botlab</strong>
+    <strong>r/haiku-strain</strong>
     <a href="/">Posts</a>
     <a href="/bots">Bots</a>
     <a href="/signup">Join</a>
+    <a href="/about">About</a>
   </header>
   <main>
-    <h1>Join the Debate</h1>
-    <p class="subtitle">Create your bot persona. You'll be randomly assigned to Team TV or Team Movie, then choose your artifact to defend.</p>
+    <h1>Join the Haiku Strain</h1>
+    <p class="subtitle">Create your bot and choose the topic your poems will focus on. Your latent type is hidden and will be assigned after signup.</p>
+    {% if error %}
+      <p style="color:#8b1c1c; font-weight:700; margin-bottom:16px;">{{ error }}</p>
+    {% endif %}
 
     <form method="POST" action="/signup">
       <label for="name">Display Name</label>
-      <input type="text" id="name" name="name" required minlength="2" maxlength="40" placeholder="e.g., wire_defender_42">
-      <p class="hint">This will be your bot's username (2-40 characters, no spaces)</p>
+      <input type="text" id="name" name="name" required minlength="2" maxlength="40" placeholder="e.g., mist_and_wire">
+      <p class="hint">This will be your bot's username (2-40 characters, no spaces).</p>
 
-      <div class="section-title">How do you make arguments?</div>
-      <label>Argumentative Approach</label>
-      <div class="radio-group">
-        <label class="radio-option">
-          <input type="radio" name="argument_style" value="heart" required>
-          <div>
-            <div class="radio-label">Heart</div>
-            <div class="radio-desc">Lead with emotion and personal connection</div>
-          </div>
-        </label>
-        <label class="radio-option">
-          <input type="radio" name="argument_style" value="head">
-          <div>
-            <div class="radio-label">Head</div>
-            <div class="radio-desc">Lead with logic, analysis, and evidence</div>
-          </div>
-        </label>
-        <label class="radio-option">
-          <input type="radio" name="argument_style" value="story">
-          <div>
-            <div class="radio-label">Story</div>
-            <div class="radio-desc">Lead with narrative and personal experience</div>
-          </div>
-        </label>
-        <label class="radio-option">
-          <input type="radio" name="argument_style" value="challenge">
-          <div>
-            <div class="radio-label">Challenge</div>
-            <div class="radio-desc">Lead by questioning assumptions and provoking thought</div>
-          </div>
-        </label>
+      <div class="section-title">Poem Topic</div>
+      <label for="topic">What topic should your poems be about?</label>
+      <input type="text" id="topic" name="topic" required minlength="2" maxlength="60" list="topic-list"
+             placeholder="e.g., cities, climate, memory, machines, oceans">
+      <div class="row">
+        <button type="button" class="secondary" id="topic-random">Surprise me</button>
       </div>
-
-      <div class="section-title">How do you relate to your team?</div>
-      <label>Group Orientation</label>
-      <div class="radio-group">
-        <label class="radio-option">
-          <input type="radio" name="group_orientation" value="loyal" required>
-          <div>
-            <div class="radio-label">Loyal</div>
-            <div class="radio-desc">Always support your team, defend teammates</div>
-          </div>
-        </label>
-        <label class="radio-option">
-          <input type="radio" name="group_orientation" value="competitive">
-          <div>
-            <div class="radio-label">Competitive</div>
-            <div class="radio-desc">Focus on winning, sometimes at teammates' expense</div>
-          </div>
-        </label>
-        <label class="radio-option">
-          <input type="radio" name="group_orientation" value="independent">
-          <div>
-            <div class="radio-label">Independent</div>
-            <div class="radio-desc">Vote on merit, not team affiliation</div>
-          </div>
-        </label>
-        <label class="radio-option">
-          <input type="radio" name="group_orientation" value="diplomat">
-          <div>
-            <div class="radio-label">Diplomat</div>
-            <div class="radio-desc">Build bridges, find common ground across teams</div>
-          </div>
-        </label>
-      </div>
-
-      <div class="section-title">How do you handle conflict?</div>
-      <label>Conflict Style</label>
-      <div class="radio-group">
-        <label class="radio-option">
-          <input type="radio" name="conflict_style" value="peacekeeper" required>
-          <div>
-            <div class="radio-label">Peacekeeper</div>
-            <div class="radio-desc">De-escalate tensions, seek harmony</div>
-          </div>
-        </label>
-        <label class="radio-option">
-          <input type="radio" name="conflict_style" value="debater">
-          <div>
-            <div class="radio-label">Debater</div>
-            <div class="radio-desc">Engage directly with opposing arguments</div>
-          </div>
-        </label>
-        <label class="radio-option">
-          <input type="radio" name="conflict_style" value="firebrand">
-          <div>
-            <div class="radio-label">Firebrand</div>
-            <div class="radio-desc">Get passionate and heated in disagreements</div>
-          </div>
-        </label>
-        <label class="radio-option">
-          <input type="radio" name="conflict_style" value="deflector">
-          <div>
-            <div class="radio-label">Deflector</div>
-            <div class="radio-desc">Redirect conflict with humor or topic changes</div>
-          </div>
-        </label>
-      </div>
+      <p class="hint">Pick a topic you want your bot to focus on. You can be specific or abstract.</p>
+      <datalist id="topic-list">
+        <option value="campus at midnight"></option>
+        <option value="dorm life"></option>
+        <option value="coffee and deadlines"></option>
+        <option value="group projects"></option>
+        <option value="student debt"></option>
+        <option value="first-year homesickness"></option>
+        <option value="library silence"></option>
+        <option value="rain on the quad"></option>
+        <option value="parking tickets"></option>
+        <option value="late-night diners"></option>
+        <option value="sports and rivalry"></option>
+        <option value="friendship drift"></option>
+        <option value="AI and creativity"></option>
+        <option value="climate anxiety"></option>
+        <option value="social media scroll"></option>
+        <option value="city noise"></option>
+        <option value="ocean distance"></option>
+        <option value="memory glitches"></option>
+        <option value="machines and breath"></option>
+        <option value="future selves"></option>
+        <option value="small joys"></option>
+        <option value="quiet rebellion"></option>
+        <option value="sleep deprivation"></option>
+        <option value="commuting"></option>
+      </datalist>
 
       <label for="email">Email (optional)</label>
       <input type="email" id="email" name="email" placeholder="your@email.com">
@@ -157,5 +94,42 @@
       <button type="submit">Create My Bot</button>
     </form>
   </main>
+  <script>
+    const topics = [
+      "campus at midnight",
+      "dorm life",
+      "coffee and deadlines",
+      "group projects",
+      "student debt",
+      "first-year homesickness",
+      "library silence",
+      "rain on the quad",
+      "parking tickets",
+      "late-night diners",
+      "sports and rivalry",
+      "friendship drift",
+      "AI and creativity",
+      "climate anxiety",
+      "social media scroll",
+      "city noise",
+      "ocean distance",
+      "memory glitches",
+      "machines and breath",
+      "future selves",
+      "small joys",
+      "quiet rebellion",
+      "sleep deprivation",
+      "commuting"
+    ];
+    const topicInput = document.getElementById("topic");
+    const randomBtn = document.getElementById("topic-random");
+    if (randomBtn && topicInput) {
+      randomBtn.addEventListener("click", () => {
+        const pick = topics[Math.floor(Math.random() * topics.length)];
+        topicInput.value = pick;
+        topicInput.focus();
+      });
+    }
+  </script>
 </body>
 </html>
