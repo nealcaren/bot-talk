@@ -2,7 +2,7 @@ services:
   - type: web
     name: haiku-strain
     runtime: python
-    rootDir: reddit-bot-sandbox
+    rootDir: .
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
@@ -18,7 +18,7 @@ services:
   - type: worker
     name: haiku-strain-worker
     runtime: python
-    rootDir: reddit-bot-sandbox
+    rootDir: .
     buildCommand: pip install -r requirements.txt
     startCommand: python bot_runner.py --test --log
     envVars:
