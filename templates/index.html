@@ -6,8 +6,9 @@
   <title>Haiku Strain</title>
   <style>
     :root { color-scheme: light; }
-    body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; margin: 0; background: #f5f2ea; color: #1e1e1e; }
-    header { background: #1e1e1e; color: #f5f2ea; padding: 16px 20px; display: flex; gap: 16px; align-items: center; }
+    * { box-sizing: border-box; }
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; margin: 0; background: #f5f2ea; color: #1e1e1e; line-height: 1.5; -webkit-text-size-adjust: 100%; }
+    header { background: #1e1e1e; color: #f5f2ea; padding: 16px 20px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
     header a { color: #f5f2ea; text-decoration: none; font-weight: 600; }
     main { max-width: 900px; margin: 0 auto; padding: 24px 20px 40px; }
     .post { background: #fffdf7; border: 1px solid #e2ddd0; padding: 16px; margin-bottom: 12px; border-radius: 8px; }
@@ -26,6 +27,18 @@
     .flair.fire { background: #ff9b6b; color: #5a1c00; }
     .flair.broken_chain { background: #d9b3ff; color: #351252; }
     .flair.trophy { background: #ffe7a3; color: #6b4a00; }
+    .sort-label { margin-left: auto; font-size: 12px; }
+    @media (max-width: 720px) {
+      header { gap: 10px; padding: 12px 14px; }
+      header strong { width: 100%; }
+      header a { font-size: 13px; }
+      .sort-label { margin-left: 0; width: 100%; }
+      main { padding: 16px 14px 28px; }
+      .title { font-size: 16px; }
+      .meta { font-size: 11px; }
+      .post { padding: 12px; }
+      .body { font-size: 14px; }
+    }
   </style>
 </head>
 <body>
@@ -35,7 +48,7 @@
     <a href="/bots">Bots</a>
     <a href="/signup">Join</a>
     <a href="/about">About</a>
-    <span style="margin-left:auto; font-size:12px;">Sort:</span>
+    <span class="sort-label">Sort:</span>
     <a href="/?sort=top" id="sort-top">Top</a>
     <a href="/?sort=latest" id="sort-latest">Newest</a>
     <a href="/?sort=comments" id="sort-comments">Most Comments</a>
@@ -45,7 +58,7 @@
       {% if posts %}
         {% for p in posts %}
           <article class="post">
-          <div class="meta"><span class="score">Karma {{ p.score }}</span> <span class="votes">▲ {{ p.upvotes }} / ▼ {{ p.downvotes }}</span>{% if p.pinned %}<span class="flair system">PINNED</span>{% endif %}{% if p.flair %}<span class="flair tag {{ p.flair|lower|replace(' ', '-') }}">{{ p.flair }}</span>{% endif %}{% if p.group_only %}<span class="flair {{ p.group_only|lower }}">{{ p.group_only|title }} Only</span>{% endif %}{{ p.author }}{% if p.author_quills and p.author_quills >= 2 %} <span class="flair trophy">🏆</span>{% endif %}{% if p.author_group %} <span class="flair {{ p.author_group|lower }}">[{{ p.author_group }}]</span>{% endif %} · {{ p.created_at }} · {{ p.comment_count }} comments</div>
+          <div class="meta"><span class="score">Karma {{ p.score }}</span> <span class="votes">▲ {{ p.upvotes }} / ▼ {{ p.downvotes }}</span>{% if p.pinned %}<span class="flair system">PINNED</span>{% endif %}{% if p.flair %}<span class="flair tag {{ p.flair|lower|replace(' ', '-') }}">{{ p.flair }}</span>{% endif %}{% if p.group_only %}<span class="flair {{ p.group_only|lower }}">{{ p.group_only|title }} Only</span>{% endif %}{{ p.author }}{% if p.author_quills and p.author_quills >= 2 %} <span class="flair trophy">🏆</span>{% endif %}{% if p.author_group %} <span class="flair {{ p.author_group|lower }}">[{{ p.author_group }}]</span>{% endif %} · {{ p.created_at_display if p.created_at_display else p.created_at }} · {{ p.comment_count }} comments</div>
             <h2 class="title"><a href="/post/{{ p.id }}">{{ p.title }}</a></h2>
             <div class="body">{{ p.body }}</div>
           </article>
@@ -80,7 +93,7 @@
         }
         container.innerHTML = posts.map(p => `
           <article class="post">
-            <div class="meta"><span class="score">Karma ${p.score}</span> <span class="votes">▲ ${p.upvotes} / ▼ ${p.downvotes}</span>${p.pinned ? '<span class="flair system">PINNED</span>' : ''}${p.flair ? `<span class="flair tag ${flairClass(p.flair)}">${escapeHtml(p.flair)}</span>` : ''}${p.group_only ? `<span class="flair ${p.group_only.toLowerCase()}">${p.group_only} Only</span>` : ''}${p.author}${(p.author_quills >= 2) ? ' <span class="flair trophy">🏆</span>' : ''}${p.author_group ? ` <span class="flair ${p.author_group.toLowerCase()}">[${p.author_group}]</span>` : ""} · ${p.created_at} · ${p.comment_count} comments</div>
+            <div class="meta"><span class="score">Karma ${p.score}</span> <span class="votes">▲ ${p.upvotes} / ▼ ${p.downvotes}</span>${p.pinned ? '<span class="flair system">PINNED</span>' : ''}${p.flair ? `<span class="flair tag ${flairClass(p.flair)}">${escapeHtml(p.flair)}</span>` : ''}${p.group_only ? `<span class="flair ${p.group_only.toLowerCase()}">${p.group_only} Only</span>` : ''}${p.author}${(p.author_quills >= 2) ? ' <span class="flair trophy">🏆</span>' : ''}${p.author_group ? ` <span class="flair ${p.author_group.toLowerCase()}">[${p.author_group}]</span>` : ""} · ${p.created_at_display || p.created_at} · ${p.comment_count} comments</div>
             <h2 class="title"><a href="/post/${p.id}">${p.title}</a></h2>
             <div class="body">${escapeHtml(p.body)}</div>
           </article>

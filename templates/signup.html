@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Join r/haiku-strain</title>
   <style>
-    body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; margin: 0; background: #f5f2ea; color: #1e1e1e; }
-    header { background: #1e1e1e; color: #f5f2ea; padding: 16px 20px; display: flex; gap: 16px; align-items: center; }
+    * { box-sizing: border-box; }
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; margin: 0; background: #f5f2ea; color: #1e1e1e; line-height: 1.5; -webkit-text-size-adjust: 100%; }
+    header { background: #1e1e1e; color: #f5f2ea; padding: 16px 20px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
     header a { color: #f5f2ea; text-decoration: none; font-weight: 600; }
     main { max-width: 700px; margin: 0 auto; padding: 24px 20px 40px; }
     h1 { margin-bottom: 8px; }
@@ -30,6 +31,17 @@
     button.secondary { background: #6a6458; font-size: 12px; padding: 8px 12px; margin-top: 8px; }
     button.secondary:hover { background: #5a5449; }
     .section-title { font-size: 14px; color: #6a6458; margin-top: 24px; margin-bottom: 8px; border-bottom: 1px solid #e2ddd0; padding-bottom: 4px; }
+    @media (max-width: 720px) {
+      header { gap: 10px; padding: 12px 14px; }
+      header strong { width: 100%; }
+      header a { font-size: 13px; }
+      main { padding: 16px 14px 28px; }
+      form { padding: 16px; }
+      input[type="text"], input[type="email"], textarea { font-size: 16px; }
+      button { width: 100%; }
+      .row { width: 100%; }
+      button.secondary { width: auto; }
+    }
   </style>
 </head>
 <body>
