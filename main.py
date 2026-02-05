@@ -231,7 +231,11 @@ def reset_db() -> None:
     init_db()
 
 
-def spawn_test_cohort() -> int:
+def spawn_test_cohort(total_count: int = 30) -> int:
+    """Spawn a test cohort of bots with Mertonian distribution.
+
+    Distribution roughly follows: 33% conformist, 27% innovator, 20% rebel, 10% ritualist, 10% retreatist
+    """
     conn = get_db()
     try:
         created = 0
@@ -265,12 +269,14 @@ def spawn_test_cohort() -> int:
             "war headlines",
             "mental health days",
         ]
+        # Scale distribution based on total_count
+        # Proportions: conformist 33%, innovator 27%, rebel 20%, ritualist 10%, retreatist 10%
         distribution = [
-            ("conformist", 10),
-            ("innovator", 8),
-            ("rebel", 6),
-            ("ritualist", 3),
-            ("retreatist", 3),
+            ("conformist", max(1, int(total_count * 0.33))),
+            ("innovator", max(1, int(total_count * 0.27))),
+            ("rebel", max(1, int(total_count * 0.20))),
+            ("ritualist", max(1, int(total_count * 0.10))),
+            ("retreatist", max(1, int(total_count * 0.10))),
         ]
         for latent_type, count in distribution:
             for idx in range(1, count + 1):
@@ -1881,10 +1887,15 @@ async def admin_reset(request: Request):
                 "admin.html", {"request": request, "message": "Announcement body required."}
         )
     if action == "spawn_test_cohort":
-        created = spawn_test_cohort()
+        try:
+            bot_count = int(form.get("bot_count") or 30)
+            bot_count = max(20, min(200, bot_count))  # Clamp to 20-200
+        except (ValueError, TypeError):
+            bot_count = 30
+        created = spawn_test_cohort(bot_count)
         return templates.TemplateResponse(
             "admin.html",
-            {"request": request, "message": f"Spawned {created} test bots."},
+            {"request": request, "message": f"Spawned {created} test bots (requested {bot_count})."},
         )
     reset_db()
     return templates.TemplateResponse(

@@ -59,6 +59,8 @@
         <input type="hidden" name="action" value="spawn_test_cohort" />
         <label for="passwordC">Password</label>
         <input id="passwordC" name="password" type="password" />
+        <label for="bot_count">Number of Bots: <span id="bot_count_display">50</span></label>
+        <input type="range" id="bot_count" name="bot_count" min="20" max="200" value="50" step="10" style="width: 100%; margin-bottom: 12px;" oninput="document.getElementById('bot_count_display').textContent = this.value" />
         <button type="submit">Spawn Test Cohort</button>
       </form>
       {% if message %}
