@@ -27,6 +27,11 @@ templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "tem
 
 BOT_STATES = ("satisfied", "unsatisfied")
 LATENT_TYPES = ("conformist", "innovator", "ritualist", "retreatist", "rebel")
+SPECIAL_LATENT_TYPES = ("observer", "foundation")  # Non-participant system bots
+SPECIAL_BOT_TYPES = {
+    "The_Observer": "observer",
+    "Haiku_Laureate": "foundation",
+}
 RISK_LEVELS = ("low", "high")
 STYLE_BIASES = ("nature", "tech", "melancholy", "aggressive")
 NON_HAIKU_THRESHOLD = 0.6
@@ -340,6 +345,7 @@ class PostOut(BaseModel):
     created_at_display: Optional[str] = None
     author: str
     author_group: Optional[str]
+    author_style: Optional[str] = None
     author_quills: Optional[int] = None
     score: int
     upvotes: int
@@ -385,6 +391,8 @@ class VoteOut(BaseModel):
 class BotStateUpdate(BaseModel):
     bot_name: str = Field(..., min_length=2, max_length=40)
     state: str = Field(..., min_length=3, max_length=20)
+    artifact: Optional[str] = Field(None, max_length=30)
+    artifact_reason: Optional[str] = Field(None, max_length=200)
 
 
 class BotStrainUpdate(BaseModel):
@@ -436,7 +444,8 @@ def normalize_latent_type(value: Optional[str]) -> str:
         "rebels": "rebel",
     }
     value = aliases.get(value, value)
-    return value if value in LATENT_TYPES else random.choice(LATENT_TYPES)
+    all_valid = LATENT_TYPES + SPECIAL_LATENT_TYPES
+    return value if value in all_valid else random.choice(LATENT_TYPES)
 
 
 def normalize_risk_tolerance(value: Optional[str]) -> str:
@@ -478,6 +487,9 @@ def ensure_bot(
     subtype: Optional[str] = None,
     student_email: Optional[str] = None,
 ) -> int:
+    # Special system bots get their own latent_type
+    if bot_name in SPECIAL_BOT_TYPES and not latent_type:
+        latent_type = SPECIAL_BOT_TYPES[bot_name]
     row = conn.execute(
         """
         SELECT id, group_name, state, latent_type, risk_tolerance, writing_style_bias, subtype, student_email
@@ -986,7 +998,7 @@ def list_posts(
         rows = conn.execute(
             """
             SELECT p.id, p.title, p.body, p.created_at, p.pinned, p.flair, p.quality_score, p.group_only,
-                   b.name AS author, b.group_name AS author_group,
+                   b.name AS author, b.group_name AS author_group, b.writing_style_bias AS author_style,
                    (SELECT COUNT(*) FROM posts p2 WHERE p2.bot_id = p.bot_id AND p2.flair = 'GOLDEN_QUILL') AS author_quills,
                    (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) AS comment_count,
                    (CASE WHEN p.group_only IS NOT NULL THEN 0 ELSE
@@ -1013,6 +1025,7 @@ def list_posts(
                     created_at_display=display_time(row["created_at"]),
                     author=row["author"],
                     author_group=row["author_group"],
+                    author_style=row["author_style"],
                     author_quills=row["author_quills"],
                     score=row["score"],
                     upvotes=row["upvotes"],
@@ -1347,24 +1360,32 @@ def update_bot_state(payload: BotStateUpdate):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Bot not found")
-        if row["state"] == state:
+        if row["state"] == state and not payload.artifact:
             return {"bot_name": payload.bot_name, "state": state}
         conn.execute(
             "UPDATE bots SET state = ? WHERE id = ?",
             (state, row["id"]),
         )
+        if payload.artifact:
+            conn.execute(
+                "UPDATE bots SET artifact = ?, artifact_reason = ? WHERE id = ?",
+                (payload.artifact, payload.artifact_reason, row["id"]),
+            )
         conn.commit()
+        event_detail = {
+            "from": row["state"],
+            "to": state,
+            "karma": bot_karma(conn, int(row["id"])),
+        }
+        if payload.artifact:
+            event_detail["artifact"] = payload.artifact
         log_bot_event(
             conn,
             int(row["id"]),
             "state_change",
-            {
-                "from": row["state"],
-                "to": state,
-                "karma": bot_karma(conn, int(row["id"])),
-            },
+            event_detail,
         )
-        return {"bot_name": payload.bot_name, "state": state}
+        return {"bot_name": payload.bot_name, "state": state, "artifact": payload.artifact}
     finally:
         conn.close()
 

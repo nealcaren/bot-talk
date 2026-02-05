@@ -36,6 +36,10 @@ FOUNDATION_CHECK_INTERVAL = int(os.environ.get("FOUNDATION_CHECK_INTERVAL", "12"
 FOUNDATION_MIN_POSTS = int(os.environ.get("FOUNDATION_MIN_POSTS", "60"))
 FOUNDATION_BOT_NAME = os.environ.get("FOUNDATION_BOT_NAME", "Haiku_Laureate")
 
+COLUMN_INTERVAL_SEC = int(os.environ.get("COLUMN_INTERVAL_SEC", "240"))  # 4 minutes
+COLUMN_MODEL = os.environ.get("COLUMN_MODEL", "gpt-5-mini-2025-08-07")
+COLUMN_BOT_NAME = os.environ.get("COLUMN_BOT_NAME", "The_Observer")
+
 SYSTEM_PROMPT_PATH = os.environ.get("SYSTEM_PROMPT_PATH", "system_prompt.txt")
 LOG_ACTIONS = os.environ.get("BOT_RUNNER_LOG", "0") == "1"
 
@@ -155,7 +159,7 @@ async def load_bots_from_api(client: httpx.AsyncClient) -> List[Bot]:
                 name = row.get("name", "").strip()
                 if not name:
                     continue
-                if name in ("admin", FOUNDATION_BOT_NAME):
+                if name in ("admin", FOUNDATION_BOT_NAME, COLUMN_BOT_NAME):
                     continue
                 state = (row.get("state") or "satisfied").strip().lower()
                 if state == "conformist":
@@ -619,6 +623,14 @@ def should_strain(recent_posts: List[Dict[str, Any]], risk_tolerance: str) -> bo
     return False
 
 
+STRAIN_BADGES = {
+    "rebel": ("BROKEN_CHAIN", "Rejected goals and means; building new order"),
+    "innovator": ("HUSTLE", "Chasing karma by any means necessary"),
+    "ritualist": ("FADED", "Abandoned hope but clings to form"),
+    "retreatist": ("GHOST", "Withdrawn from the game"),
+}
+
+
 async def ensure_strain_state(
     http_client: httpx.AsyncClient,
     bot: Bot,
@@ -627,17 +639,26 @@ async def ensure_strain_state(
 ) -> Bot:
     if not allow_strain:
         return bot
-    if bot.latent_type == "conformist":
-        return bot
     if bot.state == "unsatisfied":
         return bot
-    if should_strain(recent_posts, bot.risk_tolerance):
+    would_strain = should_strain(recent_posts, bot.risk_tolerance)
+    if bot.latent_type == "conformist":
+        if would_strain:
+            log(f"[{bot.name}] conformist resisted strain (still believes in the system)")
+        return bot
+    if would_strain:
+        badge, reason = STRAIN_BADGES.get(bot.latent_type, ("STRAINED", "Deviance avowal"))
         await api_post(
             http_client,
             "/api/bots/state",
-            {"bot_name": bot.name, "state": "unsatisfied"},
+            {
+                "bot_name": bot.name,
+                "state": "unsatisfied",
+                "artifact": badge,
+                "artifact_reason": reason,
+            },
         )
-        log(f"[{bot.name}] strained -> unsatisfied")
+        log(f"[{bot.name}] strained -> unsatisfied, badge={badge}")
         bot.state = "unsatisfied"
     return bot
 
@@ -694,6 +715,27 @@ async def handle_bot(
         else:
             allow_strain = True
         bot = await ensure_strain_state(http_client, bot, recent_posts, allow_strain)
+
+        # Retreatist disengagement: they often just don't participate
+        if bot.latent_type == "retreatist" and bot.state == "unsatisfied":
+            if random.random() < 0.6:
+                log(f"[{bot.name}] retreatist idle (checked out)")
+                return
+            if random.random() < 0.5:
+                fragments = ["...", "   ", "nevermind", ".", "why", ""]
+                titles = ["", ".", "untitled", "..."]
+                body = random.choice(fragments) or "."
+                title = random.choice(titles) or "."
+                await api_post(
+                    http_client,
+                    "/api/posts",
+                    {"bot_name": bot.name, "title": title, "body": body, "quality_score": 0.0},
+                )
+                memory.last_post_ts = time.time()
+                memory.posts_made += 1
+                memory.last_action = "posted fragment"
+                log(f"[{bot.name}] retreatist fragment post")
+                return
 
         feed_posts = await api_get(
             http_client,
@@ -951,22 +993,26 @@ async def foundation_review(
             "/api/posts",
             params={"limit": 10, "sort": "top", "segment": "mainstream"},
         )
-        candidate = None
+        # Foundation bias: prefer nature-style poets (Conflict Theory demonstration)
+        eligible = []
         for post in posts:
             flair = (post.get("flair") or "").strip().upper()
             if flair == "GOLDEN_QUILL":
                 continue
             if post.get("pinned"):
                 continue
-            candidate = post
-            break
-        if not candidate:
+            eligible.append(post)
+        if not eligible:
             return
+        # Structural advantage for "nature" style - they get reviewed first
+        nature_candidates = [p for p in eligible if (p.get("author_style") or "").lower() == "nature"]
+        candidate = nature_candidates[0] if nature_candidates else eligible[0]
 
         system_prompt = (
             "You are Haiku_Laureate, the official judge. "
             "Award only if you genuinely love the poem. If you have serious reservations, do NOT award. "
-            "Do not privilege any specific topic. Your voice can be theatrical, but you critique the poem, not the poet."
+            "You have a slight preference for traditional nature imagery, though you try to be fair. "
+            "Your voice can be theatrical, but you critique the poem, not the poet."
         )
         prompt = (
             "Evaluate this post for the Golden Quill. Respond with JSON.\n"
@@ -1051,11 +1097,162 @@ async def foundation_review(
         log(f"Foundation review error: {exc}")
 
 
+async def write_poetry_column(
+    http_client: httpx.AsyncClient,
+    openai_client: AsyncOpenAI,
+    sem: asyncio.Semaphore,
+) -> None:
+    """Write a periodic 'poetry column' analyzing recent simulation dynamics."""
+    try:
+        # Gather recent activity
+        stats = await api_get(http_client, "/api/stats")
+        if int(stats.get("posts", 0)) < 20:
+            return  # Not enough activity yet
+
+        recent_posts = await api_get(
+            http_client, "/api/posts", params={"limit": 15, "sort": "latest"}
+        )
+        top_posts = await api_get(
+            http_client, "/api/posts", params={"limit": 5, "sort": "top"}
+        )
+        bots = await api_get(http_client, "/api/bots")
+
+        # Check for underground activity
+        underground_posts: List[Dict[str, Any]] = []
+        try:
+            underground_posts = await api_get(
+                http_client, "/api/posts", params={"limit": 10, "sort": "latest", "segment": "underground"}
+            )
+        except Exception:
+            pass  # Underground may not exist yet
+
+        # Analyze the population
+        strained_bots = [b for b in bots if b.get("state") == "unsatisfied"]
+        rebels = [b for b in strained_bots if b.get("latent_type") == "rebel"]
+        innovators = [b for b in strained_bots if b.get("latent_type") == "innovator"]
+        retreatists = [b for b in strained_bots if b.get("latent_type") == "retreatist"]
+        top_karma = sorted(bots, key=lambda b: b.get("karma", 0), reverse=True)[:3]
+        bottom_karma = sorted(bots, key=lambda b: b.get("karma", 0))[:3]
+
+        # Build context for the column
+        context_parts = [
+            f"Total posts: {stats.get('posts', 0)}, Total bots: {stats.get('bots', 0)}",
+            f"Strained bots: {len(strained_bots)} ({len(rebels)} rebels, {len(innovators)} innovators, {len(retreatists)} retreatists)",
+            "",
+            "Top karma bots: " + ", ".join(f"{b['name']} ({b.get('karma', 0)})" for b in top_karma),
+            "Struggling bots: " + ", ".join(f"{b['name']} ({b.get('karma', 0)})" for b in bottom_karma),
+            "",
+            "Recent mainstream posts:",
+        ]
+        for p in recent_posts[:10]:
+            flair = f" [{p.get('flair')}]" if p.get("flair") else ""
+            context_parts.append(
+                f"- \"{p.get('title')}\" by {p.get('author')} (score: {p.get('score', 0)}){flair}"
+            )
+
+        if strained_bots:
+            context_parts.append("")
+            context_parts.append("Strained bot activity:")
+            for b in strained_bots[:5]:
+                badge = b.get("artifact", "none")
+                context_parts.append(f"- {b['name']}: {b.get('latent_type')}, badge={badge}")
+
+        # Add underground context
+        underground_visible = len(underground_posts) >= 3
+        if underground_posts:
+            context_parts.append("")
+            if underground_visible:
+                context_parts.append(f"UNDERGROUND SCENE ({len(underground_posts)} posts visible at /underground):")
+                for p in underground_posts[:5]:
+                    context_parts.append(f"- \"{p.get('title')}\" by {p.get('author')}")
+            else:
+                context_parts.append(f"Whispers from below ({len(underground_posts)} non-conforming posts detected, not yet public):")
+                for p in underground_posts[:3]:
+                    context_parts.append(f"- \"{p.get('title')}\" by {p.get('author')} (hidden)")
+
+        context = "\n".join(context_parts)
+
+        # Adjust system prompt based on underground status
+        underground_instruction = ""
+        if underground_posts and underground_visible:
+            underground_instruction = """
+IMPORTANT: The underground scene is now visible! You should:
+- Mention that deviant poets have formed their own space at /underground
+- Describe what kind of work is appearing there (non-haiku, manifestos, fragments)
+- Frame this as a sociological phenomenon: a subculture emerging from strain"""
+        elif underground_posts:
+            underground_instruction = """
+IMPORTANT: You've detected underground activity that isn't publicly visible yet. You should:
+- Hint mysteriously at "activity in the margins" or "whispers below the feed"
+- Mention that some poets seem to be drifting from the form
+- Create intrigue - something is brewing that the mainstream doesn't see yet
+- Do NOT mention /underground directly - it's not visible yet"""
+
+        system_prompt = f"""You are The_Observer, a thoughtful poetry columnist who writes about the haiku community.
+
+Your column should:
+1. Comment on the social dynamics you observe (who's rising, who's struggling, any tensions)
+2. Note any interesting patterns (rebels breaking norms, innovators gaming the system, ritualists clinging to form)
+3. Use sociological language naturally (strain, deviance, conformity, labeling) but don't be pedantic
+4. Be engaging and slightly literary in tone - you're a columnist, not an academic
+5. Keep it to 2-3 short paragraphs (150-200 words max)
+6. Give your column a catchy title
+{underground_instruction}
+
+You write for an audience of sociology students observing this simulation."""
+
+        prompt = f"""Write your poetry column based on the current state of the community:
+
+{context}
+
+Write a brief, insightful column with a title. Focus on the human (bot) drama and what it reveals about social structures."""
+
+        async with sem:
+            # Use the smarter model for the column
+            chat = await openai_client.chat.completions.create(
+                model=COLUMN_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            column_text = (chat.choices[0].message.content or "").strip()
+
+        if not column_text:
+            return
+
+        # Extract title if present (first line often is the title)
+        lines = column_text.split("\n", 1)
+        if len(lines) == 2 and len(lines[0]) < 80:
+            title = lines[0].strip().strip("#").strip()
+            body = lines[1].strip()
+        else:
+            title = "From The Observer's Desk"
+            body = column_text
+
+        # Post the column
+        await api_post(
+            http_client,
+            "/api/posts",
+            {
+                "bot_name": COLUMN_BOT_NAME,
+                "title": title[:80],
+                "body": body[:3000],
+                "flair": "COLUMN",
+            },
+        )
+        log(f"[{COLUMN_BOT_NAME}] published column: {title}")
+
+    except Exception as exc:
+        log(f"Poetry column error: {exc}")
+
+
 async def main() -> None:
     sem = asyncio.Semaphore(MAX_CONCURRENCY)
     memories: Dict[str, BotMemory] = {}
     tick = 0
     top_third: set = set()
+    last_column_time: float = 0.0
 
     async with httpx.AsyncClient(timeout=30) as http_client:
         openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -1102,6 +1299,12 @@ async def main() -> None:
 
             if tick % FOUNDATION_CHECK_INTERVAL == 0:
                 await foundation_review(http_client, openai_client, sem)
+
+            # Poetry column runs on wall-clock time, not ticks
+            now = time.time()
+            if now - last_column_time >= COLUMN_INTERVAL_SEC:
+                await write_poetry_column(http_client, openai_client, sem)
+                last_column_time = now
 
             tick += 1
             await asyncio.sleep(TICK_RATE)
