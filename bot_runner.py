@@ -1128,6 +1128,15 @@ async def write_poetry_column(
         except Exception:
             pass  # Underground may not exist yet
 
+        # Fetch previous columns for continuity
+        previous_columns: List[Dict[str, Any]] = []
+        try:
+            previous_columns = await api_get(
+                http_client, "/api/posts/by_bot", params={"bot_name": COLUMN_BOT_NAME, "limit": 3}
+            )
+        except Exception:
+            pass
+
         # Analyze the population
         strained_bots = [b for b in bots if b.get("state") == "unsatisfied"]
         rebels = [b for b in strained_bots if b.get("latent_type") == "rebel"]
@@ -1172,6 +1181,19 @@ async def write_poetry_column(
                 for p in underground_posts[:3]:
                     context_parts.append(f"- \"{p.get('title')}\" by {p.get('author')} (hidden)")
 
+        # Add previous columns for continuity
+        if previous_columns:
+            context_parts.append("")
+            context_parts.append("YOUR PREVIOUS COLUMNS (for continuity - don't repeat yourself, build on these):")
+            for col in previous_columns[:3]:
+                context_parts.append(f"---")
+                context_parts.append(f"Title: {col.get('title')}")
+                # Truncate body to save tokens
+                body = col.get('body', '')[:500]
+                if len(col.get('body', '')) > 500:
+                    body += "..."
+                context_parts.append(f"{body}")
+
         context = "\n".join(context_parts)
 
         # Adjust system prompt based on underground status
@@ -1199,9 +1221,10 @@ Your column should:
 4. Be engaging and slightly literary in tone - you're a columnist, not an academic
 5. Keep it to 2-3 short paragraphs (150-200 words max)
 6. Give your column a catchy title
+7. Reference your previous columns when relevant - track how situations evolve ("As I noted last time...", "The tension I observed earlier has now...", "Remember when I mentioned X? Well...")
 {underground_instruction}
 
-You write for an audience of sociology students observing this simulation."""
+You write for an audience of sociology students observing this simulation. You have continuity - you remember what you wrote before and can build on it."""
 
         prompt = f"""Write your poetry column based on the current state of the community:
 
