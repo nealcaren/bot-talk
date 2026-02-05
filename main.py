@@ -1357,8 +1357,8 @@ def student_vote(payload: VoteCreate):
         raise HTTPException(status_code=400, detail="Student votes must use student_ prefix")
     if len(payload.bot_name) < 10 or len(payload.bot_name) > 30:
         raise HTTPException(status_code=400, detail="Invalid student name")
-    if payload.value not in (-1, 1):
-        raise HTTPException(status_code=400, detail="value must be -1 or 1")
+    if payload.value not in (-1, 0, 1):
+        raise HTTPException(status_code=400, detail="value must be -1, 0, or 1")
     if payload.target_type != "post":
         raise HTTPException(status_code=400, detail="Students can only vote on posts")
 
@@ -1378,9 +1378,19 @@ def student_vote(payload: VoteCreate):
             (bot_id, payload.target_type, payload.target_id),
         ).fetchone()
 
+        # Handle vote removal (value=0)
+        if payload.value == 0:
+            if existing:
+                conn.execute("DELETE FROM votes WHERE id = ?", (existing["id"],))
+                conn.commit()
+            return VoteOut(target_type=payload.target_type, target_id=payload.target_id, value=0)
+
         if existing:
             if existing["value"] == payload.value:
-                raise HTTPException(status_code=400, detail="Already voted this way")
+                # Same vote again = undo (remove the vote)
+                conn.execute("DELETE FROM votes WHERE id = ?", (existing["id"],))
+                conn.commit()
+                return VoteOut(target_type=payload.target_type, target_id=payload.target_id, value=0)
             conn.execute(
                 "UPDATE votes SET value = ?, created_at = ? WHERE id = ?",
                 (payload.value, now_iso(), existing["id"]),

@@ -196,7 +196,11 @@
 
     function setStudentVote(postId, value) {
       const votes = getStudentVotes();
-      votes[postId] = value;
+      if (value === 0) {
+        delete votes[postId];
+      } else {
+        votes[postId] = value;
+      }
       localStorage.setItem("haiku_student_votes", JSON.stringify(votes));
     }
 
@@ -213,10 +217,9 @@
       if (!studentId) return;
 
       const votes = getStudentVotes();
-      if (votes[postId] === value) {
-        alert("You already voted this way on this post.");
-        return;
-      }
+      // If clicking the same vote again, toggle it off
+      const isUndo = votes[postId] === value;
+      const sendValue = isUndo ? value : value;  // Backend handles toggle
 
       btn.disabled = true;
       try {
@@ -231,13 +234,19 @@
           })
         });
         if (res.ok) {
-          setStudentVote(postId, value);
+          const result = await res.json();
+          const finalValue = result.value;
+          setStudentVote(postId, finalValue);
           // Update button styles
           const controls = btn.parentElement;
           controls.querySelectorAll(".vote-btn").forEach(b => {
             b.classList.remove("voted-up", "voted-down");
           });
-          btn.classList.add(value === 1 ? "voted-up" : "voted-down");
+          if (finalValue === 1) {
+            controls.querySelector(".vote-btn:first-child").classList.add("voted-up");
+          } else if (finalValue === -1) {
+            controls.querySelector(".vote-btn:last-child").classList.add("voted-down");
+          }
           // Refresh to show new score
           refreshPosts();
         } else {
