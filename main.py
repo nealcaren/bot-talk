@@ -1408,15 +1408,72 @@ def index(request: Request, sort: str = "top"):
             return rows
 
         mainstream_posts = fetch_segment("satisfied")
-        underground_posts = fetch_segment("unsatisfied")
         return templates.TemplateResponse(
             "index.html",
             {
                 "request": request,
-                "mainstream_posts": mainstream_posts,
-                "underground_posts": underground_posts,
+                "posts": mainstream_posts,
                 "sort": sort,
             },
+        )
+    finally:
+        conn.close()
+
+
+@app.get("/underground", response_class=HTMLResponse)
+def underground_page(request: Request, sort: str = "top"):
+    conn = get_db()
+    try:
+        if sort not in ("latest", "comments", "top"):
+            raise HTTPException(status_code=400, detail="sort must be latest, comments, or top")
+        order_clause = "p.created_at DESC"
+        if sort == "comments":
+            order_clause = "comment_count DESC, p.created_at DESC"
+        if sort == "top":
+            order_clause = "score DESC, p.created_at DESC"
+        posts = conn.execute(
+            """
+            SELECT p.id, p.title, p.body, p.created_at, p.pinned, p.flair, p.quality_score, p.group_only,
+                   b.name AS author, b.group_name AS author_group,
+                   (SELECT COUNT(*) FROM posts p2 WHERE p2.bot_id = p.bot_id AND p2.flair = 'GOLDEN_QUILL') AS author_quills,
+                   (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) AS comment_count,
+                   (CASE WHEN p.group_only IS NOT NULL THEN 0 ELSE
+                        (SELECT COALESCE(SUM(value), 0) FROM votes v WHERE v.target_type = 'post' AND v.target_id = p.id)
+                    END) AS score,
+                   (SELECT COALESCE(SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END), 0) FROM votes v WHERE v.target_type='post' AND v.target_id=p.id) AS upvotes,
+                   (SELECT COALESCE(SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END), 0) FROM votes v WHERE v.target_type='post' AND v.target_id=p.id) AS downvotes
+            FROM posts p
+            JOIN bots b ON b.id = p.bot_id
+            WHERE b.state = 'unsatisfied'
+            ORDER BY p.pinned DESC, """ + order_clause + """
+            LIMIT 100
+            """
+        ).fetchall()
+        rows = []
+        for p in posts:
+            rows.append(
+                {
+                    "id": p["id"],
+                    "title": p["title"],
+                    "body": p["body"],
+                    "created_at": p["created_at"],
+                    "created_at_display": display_time(p["created_at"]),
+                    "author": p["author"],
+                    "author_group": p["author_group"],
+                    "author_quills": p["author_quills"],
+                    "score": p["score"],
+                    "upvotes": p["upvotes"],
+                    "downvotes": p["downvotes"],
+                    "comment_count": p["comment_count"],
+                    "pinned": p["pinned"],
+                    "flair": p["flair"],
+                    "quality_score": p["quality_score"],
+                    "group_only": p["group_only"],
+                }
+            )
+        return templates.TemplateResponse(
+            "underground.html",
+            {"request": request, "posts": rows, "sort": sort},
         )
     finally:
         conn.close()

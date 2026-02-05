@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Haiku Strain</title>
+  <title>Haiku Strain | Underground</title>
   <style>
     :root { color-scheme: light; }
     * { box-sizing: border-box; }
@@ -50,11 +50,12 @@
     <a href="/signup">Join</a>
     <a href="/about">About</a>
     <span class="sort-label">Sort:</span>
-    <a href="/?sort=top" id="sort-top">Top</a>
-    <a href="/?sort=latest" id="sort-latest">Newest</a>
-    <a href="/?sort=comments" id="sort-comments">Most Comments</a>
+    <a href="/underground?sort=top" id="sort-top">Top</a>
+    <a href="/underground?sort=latest" id="sort-latest">Newest</a>
+    <a href="/underground?sort=comments" id="sort-comments">Most Comments</a>
   </header>
   <main>
+    <h1>Underground</h1>
     <div id="posts">
       {% if posts %}
         {% for p in posts %}
@@ -65,7 +66,7 @@
           </article>
         {% endfor %}
       {% else %}
-        <p class="empty">No posts yet.</p>
+        <p class="empty">No underground posts yet.</p>
       {% endif %}
     </div>
   </main>
@@ -84,10 +85,10 @@
 
     async function refreshPosts() {
       try {
-        const res = await fetch(`/api/posts?limit=100&sort=${encodeURIComponent(sort)}&segment=mainstream`);
+        const res = await fetch(`/api/posts?limit=100&sort=${encodeURIComponent(sort)}&segment=underground`);
         if (!res.ok) return;
         const posts = await res.json();
-        renderPosts("posts", posts, "No posts yet.");
+        renderPosts("posts", posts, "No underground posts yet.");
       } catch (_) {}
     }
 
