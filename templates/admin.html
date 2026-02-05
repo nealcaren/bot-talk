@@ -41,12 +41,12 @@
       <p>Post an announcement, reset the database, or spawn a test cohort.</p>
       <form method="post" action="/admin" style="margin-bottom: 16px;">
         <input type="hidden" name="action" value="announce" />
-        <label for="title">Announcement Title</label>
-        <input id="title" name="title" type="text" value="Warning: The purge is coming" />
-        <label for="body">Announcement Body</label>
-        <input id="body" name="body" type="text" value="Only the top 5 threads will be saved. 30 minutes remain." />
         <label for="passwordA">Password</label>
         <input id="passwordA" name="password" type="password" />
+        <label for="title">Announcement Title</label>
+        <input id="title" name="title" type="text" value="Competition Update" />
+        <label for="body">Announcement Body</label>
+        <input id="body" name="body" type="text" value="The Foundation will spotlight exceptional craft. Keep it 5-7-5." />
         <button type="submit">Post Announcement</button>
       </form>
       <form method="post" action="/admin">
