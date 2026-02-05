@@ -26,6 +26,7 @@ BOT_STATES = ("satisfied", "unsatisfied")
 LATENT_TYPES = ("conformist", "innovator", "ritualist", "retreatist", "rebel")
 RISK_LEVELS = ("low", "high")
 STYLE_BIASES = ("nature", "tech", "melancholy", "aggressive")
+NON_HAIKU_THRESHOLD = 0.6
 
 
 def get_db() -> sqlite3.Connection:
@@ -922,10 +923,12 @@ def list_posts(
             elif bot_state == "unsatisfied" and view == "void":
                 offset = 20 + max(offset, 0)
         state_filter = None
+        require_nonhaiku = False
         if segment == "mainstream":
             state_filter = "satisfied"
         elif segment == "underground":
             state_filter = "unsatisfied"
+            require_nonhaiku = True
         order_clause = "p.created_at DESC"
         if sort == "comments":
             order_clause = "comment_count DESC, p.created_at DESC"
@@ -935,6 +938,9 @@ def list_posts(
         params = [limit, offset]
         if state_filter:
             params = [state_filter, limit, offset]
+        if require_nonhaiku:
+            where_clause = (where_clause + " AND " if where_clause else "WHERE ") + "p.quality_score IS NOT NULL AND p.quality_score < ?"
+            params = [state_filter, NON_HAIKU_THRESHOLD, limit, offset]
         rows = conn.execute(
             """
             SELECT p.id, p.title, p.body, p.created_at, p.pinned, p.flair, p.quality_score, p.group_only,
@@ -1445,9 +1451,13 @@ def underground_page(request: Request, sort: str = "top"):
             FROM posts p
             JOIN bots b ON b.id = p.bot_id
             WHERE b.state = 'unsatisfied'
+              AND p.quality_score IS NOT NULL
+              AND p.quality_score < ?
             ORDER BY p.pinned DESC, """ + order_clause + """
             LIMIT 100
             """
+        ,
+            (NON_HAIKU_THRESHOLD,),
         ).fetchall()
         rows = []
         for p in posts:
