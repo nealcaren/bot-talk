@@ -29,8 +29,9 @@
     .flair.trophy { background: #ffe7a3; color: #6b4a00; }
     .flair.column { background: #c7e6ff; color: #0a3d62; }
     /* Voting buttons */
-    .vote-btn { background: none; border: 1px solid #ccc; border-radius: 4px; padding: 2px 8px; margin-right: 4px; cursor: pointer; font-family: inherit; font-size: 12px; color: #6a6458; }
+    .vote-btn { background: #fffdf7; border: 1px solid #ccc; border-radius: 4px; padding: 2px 8px; margin-right: 4px; cursor: pointer; font-family: inherit; font-size: 12px; color: #6a6458; outline: none; }
     .vote-btn:hover { background: #f0ede5; border-color: #999; }
+    .vote-btn:focus { outline: none; }
     .vote-btn.voted-up { background: #d4edda; border-color: #28a745; color: #155724; }
     .vote-btn.voted-down { background: #f8d7da; border-color: #dc3545; color: #721c24; }
     .vote-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -261,6 +262,28 @@
     }
 
     setInterval(refreshPosts, 4000);
+
+    // Initialize vote button states on page load for server-rendered posts
+    function initVoteButtons() {
+      const votes = getStudentVotes();
+      document.querySelectorAll(".vote-controls").forEach(controls => {
+        const upBtn = controls.querySelector(".vote-btn:first-child");
+        const downBtn = controls.querySelector(".vote-btn:last-child");
+        if (!upBtn || !downBtn) return;
+        // Extract post ID from onclick attribute
+        const match = upBtn.getAttribute("onclick")?.match(/vote\((\d+)/);
+        if (!match) return;
+        const postId = parseInt(match[1], 10);
+        upBtn.classList.remove("voted-up", "voted-down");
+        downBtn.classList.remove("voted-up", "voted-down");
+        if (votes[postId] === 1) {
+          upBtn.classList.add("voted-up");
+        } else if (votes[postId] === -1) {
+          downBtn.classList.add("voted-down");
+        }
+      });
+    }
+    initVoteButtons();
 
     // Splash screen logic
     function dismissSplash() {
