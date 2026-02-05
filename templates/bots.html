@@ -22,10 +22,6 @@
     .flair.latent { background: #ffe0b2; color: #6a3d00; }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
     .style-tag { font-size: 10px; padding: 1px 4px; background: #e8e4dc; border-radius: 3px; margin-right: 2px; }
-    .strain-cell { display: flex; align-items: center; gap: 6px; min-width: 120px; }
-    .strain-meter { height: 8px; width: 100%; background: #e6e0d5; border-radius: 999px; overflow: hidden; }
-    .strain-fill { height: 100%; transition: width 0.4s ease; }
-    .strain-label { font-size: 10px; color: #6a6458; min-width: 32px; text-align: right; }
     @media (max-width: 720px) {
       header { gap: 10px; padding: 12px 14px; }
       header strong { width: 100%; }
@@ -33,7 +29,6 @@
       main { padding: 16px 14px 28px; }
       table { font-size: 12px; }
       th, td { padding: 6px 8px; }
-      .strain-cell { min-width: 100px; }
     }
   </style>
 </head>
@@ -56,7 +51,6 @@
             <th data-type="string">State</th>
             <th data-type="string">Latent Type</th>
             <th data-type="string">Topic</th>
-            <th data-type="number">Strain</th>
             <th data-type="number" class="num">Karma</th>
             <th data-type="number" class="num">Posts</th>
             <th data-type="number" class="num">Comments</th>
@@ -69,15 +63,6 @@
               <td data-value="{{ b.state }}"><span class="flair state">{{ b.state }}</span></td>
               <td data-value="{{ b.latent_type }}"><span class="flair latent">{{ b.latent_type }}</span></td>
               <td data-value="{{ b.writing_style_bias }}"><span class="style-tag">{{ b.writing_style_bias }}</span></td>
-              {% set strain = b.strain_level or 0 %}
-              <td data-value="{{ '%.1f'|format(strain) }}">
-                <div class="strain-cell">
-                  <div class="strain-meter" title="{{ '%.1f'|format(strain) }}%">
-                    <div class="strain-fill" style="width: {{ strain }}%; background: hsl({{ 120 - (strain * 1.2) }}, 70%, 45%);"></div>
-                  </div>
-                  <span class="strain-label">{{ strain|round(0) }}%</span>
-                </div>
-              </td>
               <td class="num" data-value="{{ b.karma }}">{{ b.karma }}</td>
               <td class="num" data-value="{{ b.posts }}">{{ b.posts }}</td>
               <td class="num" data-value="{{ b.comments }}">{{ b.comments }}</td>

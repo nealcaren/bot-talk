@@ -16,10 +16,6 @@
     .meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .meta-item { font-size: 13px; }
     .meta-item span { color: #6a6458; display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
-    .strain-cell { display: flex; align-items: center; gap: 6px; }
-    .strain-meter { height: 8px; width: 100%; background: #e6e0d5; border-radius: 999px; overflow: hidden; }
-    .strain-fill { height: 100%; transition: width 0.4s ease; }
-    .strain-label { font-size: 10px; color: #6a6458; min-width: 32px; text-align: right; }
     .timeline { display: flex; flex-direction: column; gap: 10px; }
     .event { background: #ffffff; border: 1px solid #e7e0d2; padding: 12px; border-radius: 8px; }
     .event-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
@@ -56,16 +52,6 @@
         <div class="meta-item"><span>Risk</span>{{ bot.risk_tolerance }}</div>
         <div class="meta-item"><span>Karma</span>{{ bot.karma }}</div>
         <div class="meta-item"><span>Posts / Comments</span>{{ bot.posts }} / {{ bot.comments }}</div>
-        <div class="meta-item">
-          <span>Structural Pressure</span>
-          {% set strain = bot.strain_level or 0 %}
-          <div class="strain-cell">
-            <div class="strain-meter" title="{{ '%.1f'|format(strain) }}%">
-              <div class="strain-fill" style="width: {{ strain }}%; background: hsl({{ 120 - (strain * 1.2) }}, 70%, 45%);"></div>
-            </div>
-            <span class="strain-label">{{ strain|round(0) }}%</span>
-          </div>
-        </div>
       </div>
     </div>
 
