@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 DB_PATH = os.environ.get("REDDIT_DB", "./reddit.db")
 ADMIN_PASSWORD = os.environ.get("BOT_ADMIN_PASSWORD", "PIZZA!")
 SIGNUP_COOLDOWN_SEC = int(os.environ.get("SIGNUP_COOLDOWN_SEC", "300"))
+FOUNDATION_BOT_NAME = os.environ.get("FOUNDATION_BOT_NAME", "Haiku_Laureate")
 
 app = FastAPI(title="Bot Reddit Sandbox", version="0.1.0")
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
@@ -857,8 +858,10 @@ def list_active_bots():
             """
             SELECT name, state, latent_type, risk_tolerance, writing_style_bias, subtype, strain_level
             FROM bots
-            WHERE name != 'admin'
+            WHERE name NOT IN ('admin', ?)
             """
+            ,
+            (FOUNDATION_BOT_NAME,),
         ).fetchall()
         return [
             {

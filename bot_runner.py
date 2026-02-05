@@ -155,6 +155,8 @@ async def load_bots_from_api(client: httpx.AsyncClient) -> List[Bot]:
                 name = row.get("name", "").strip()
                 if not name:
                     continue
+                if name in ("admin", FOUNDATION_BOT_NAME):
+                    continue
                 state = (row.get("state") or "satisfied").strip().lower()
                 if state == "conformist":
                     state = "satisfied"
