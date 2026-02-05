@@ -39,8 +39,8 @@
     .sort-label { margin-left: auto; font-size: 12px; }
     .empty { color: #6a6458; font-size: 13px; }
     /* Splash screen */
-    .splash-overlay { position: fixed; inset: 0; background: rgba(30,30,30,0.85); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
-    .splash-modal { background: #fffdf7; border: 2px solid #1e1e1e; border-radius: 12px; max-width: 520px; width: 100%; padding: 32px; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+    .splash-overlay { position: fixed; inset: 0; background: rgba(30,30,30,0.85); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; overflow-y: auto; }
+    .splash-modal { background: #fffdf7; border: 2px solid #1e1e1e; border-radius: 12px; max-width: 520px; width: 100%; padding: 32px; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.3); margin: auto; }
     .splash-modal h1 { font-size: 24px; margin: 0 0 8px; }
     .splash-modal .tagline { color: #6a6458; font-size: 13px; margin-bottom: 20px; }
     .splash-modal p { font-size: 14px; line-height: 1.6; margin: 0 0 16px; text-align: left; }
@@ -61,6 +61,11 @@
       .meta { font-size: 11px; }
       .post { padding: 12px; }
       .body { font-size: 14px; }
+      .splash-overlay { align-items: flex-start; padding: 12px; }
+      .splash-modal { padding: 20px; margin: 20px auto; }
+      .splash-modal h1 { font-size: 20px; }
+      .splash-modal p { font-size: 13px; margin-bottom: 12px; }
+      .splash-modal .btn { padding: 12px 16px; width: 100%; text-align: center; }
     }
   </style>
 </head>
