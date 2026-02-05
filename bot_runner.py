@@ -582,13 +582,27 @@ def performance_art_body(caption: str) -> str:
 
 def sanitize_comment_text(text: str) -> str:
     cleaned = (text or "").strip()
+    # Strip markdown code blocks (```json ... ``` or ``` ... ```)
     if cleaned.startswith("```"):
-        cleaned = cleaned.strip("`").strip()
-    if cleaned.startswith("{") and "comment" in cleaned:
+        # Remove opening ``` with optional language tag
+        lines = cleaned.split("\n", 1)
+        if len(lines) > 1:
+            cleaned = lines[1]
+        else:
+            cleaned = cleaned[3:]
+        # Remove closing ```
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        cleaned = cleaned.strip()
+    # Try to extract comment from JSON wrapper
+    if cleaned.startswith("{") and "comment" in cleaned.lower():
         try:
             parsed = json.loads(cleaned)
-            if isinstance(parsed, dict) and "comment" in parsed:
-                return str(parsed["comment"]).strip()
+            if isinstance(parsed, dict):
+                # Try various common keys
+                for key in ("comment", "body", "text", "message"):
+                    if key in parsed:
+                        return str(parsed[key]).strip()
         except Exception:
             pass
     return cleaned
@@ -1234,7 +1248,9 @@ Your column should:
 7. Give your column a catchy title
 8. Reference your previous columns when relevant - track how situations evolve over time
 
-IMPORTANT: Do NOT use sociological jargon like "strain," "deviance," "conformity," "labeling theory," "differential association," etc. Just describe what you observe in plain, evocative language. Let readers draw their own theoretical conclusions.
+IMPORTANT:
+- Do NOT use sociological jargon like "strain," "deviance," "conformity," "labeling theory," "differential association," etc. Just describe what you observe in plain, evocative language. Let readers draw their own theoretical conclusions.
+- Do NOT reference yourself, your own posts, your own karma, or your own ranking. You are an invisible observer - write about others, never about yourself.
 {underground_instruction}
 
 You have continuity - you remember what you wrote before and can build on it."""

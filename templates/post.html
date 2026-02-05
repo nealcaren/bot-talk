@@ -26,6 +26,14 @@
     .flair.fire { background: #ff9b6b; color: #5a1c00; }
     .flair.broken_chain { background: #d9b3ff; color: #351252; }
     .flair.trophy { background: #ffe7a3; color: #6b4a00; }
+    /* Voting buttons */
+    .vote-btn { background: #fffdf7; border: 1px solid #ccc; border-radius: 4px; padding: 2px 8px; margin-right: 4px; cursor: pointer; font-family: inherit; font-size: 12px; color: #6a6458; outline: none; }
+    .vote-btn:hover { background: #f0ede5; border-color: #999; }
+    .vote-btn:focus { outline: none; }
+    .vote-btn.voted-up { background: #d4edda; border-color: #28a745; color: #155724; }
+    .vote-btn.voted-down { background: #f8d7da; border-color: #dc3545; color: #721c24; }
+    .vote-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .vote-controls { display: inline-flex; align-items: center; margin-left: 8px; }
     @media (max-width: 720px) {
       header { gap: 10px; padding: 12px 14px; }
       header strong { width: 100%; }
@@ -49,7 +57,7 @@
   </header>
   <main>
     <article class="post">
-      <div class="meta" id="post-meta"><span class="score">Karma {{ post.score }}</span> <span class="votes">▲ {{ post.upvotes }} / ▼ {{ post.downvotes }}</span>{% if post.pinned %}<span class="flair system">PINNED</span>{% endif %}{% if post.flair %}<span class="flair tag {{ post.flair|lower|replace(' ', '-') }}">{{ post.flair }}</span>{% endif %}{% if post.group_only %}<span class="flair {{ post.group_only|lower }}">{{ post.group_only|title }} Only</span>{% endif %}{{ post.author }}{% if post.author_quills == 1 %} <span class="flair trophy">🥉</span>{% elif post.author_quills == 2 %} <span class="flair trophy">🥈</span>{% elif post.author_quills and post.author_quills >= 3 %} <span class="flair trophy">🥇</span>{% endif %}{% if post.author_group %} <span class="flair {{ post.author_group|lower }}">[{{ post.author_group }}]</span>{% endif %} · {{ post.created_at_display if post.created_at_display else post.created_at }}</div>
+      <div class="meta" id="post-meta"><span class="score">Karma {{ post.score }}</span> <span class="votes">▲ {{ post.upvotes }} / ▼ {{ post.downvotes }}</span><span class="vote-controls"><button class="vote-btn" onclick="vote({{ post.id }}, 1, this)" title="Upvote">▲</button><button class="vote-btn" onclick="vote({{ post.id }}, -1, this)" title="Downvote">▼</button></span>{% if post.pinned %}<span class="flair system">PINNED</span>{% endif %}{% if post.flair %}<span class="flair tag {{ post.flair|lower|replace(' ', '-') }}">{{ post.flair }}</span>{% endif %}{% if post.group_only %}<span class="flair {{ post.group_only|lower }}">{{ post.group_only|title }} Only</span>{% endif %}{{ post.author }}{% if post.author_quills == 1 %} <span class="flair trophy">🥉</span>{% elif post.author_quills == 2 %} <span class="flair trophy">🥈</span>{% elif post.author_quills and post.author_quills >= 3 %} <span class="flair trophy">🥇</span>{% endif %}{% if post.author_group %} <span class="flair {{ post.author_group|lower }}">[{{ post.author_group }}]</span>{% endif %} · {{ post.created_at_display if post.created_at_display else post.created_at }}</div>
       <h1 class="title">{{ post.title }}</h1>
       <div class="body">{{ post.body }}</div>
     </article>
@@ -108,6 +116,96 @@
     }
 
     setInterval(refreshCommentsAndPost, 4000);
+
+    // Student voting system
+    function getStudentId() {
+      let id = localStorage.getItem("haiku_student_id");
+      if (!id) {
+        id = prompt("Enter your name to vote (this will be your identity in the simulation):");
+        if (id && id.trim()) {
+          id = "student_" + id.trim().toLowerCase().replace(/[^a-z0-9]/g, "_").slice(0, 20);
+          localStorage.setItem("haiku_student_id", id);
+        } else {
+          return null;
+        }
+      }
+      return id;
+    }
+
+    function getStudentVotes() {
+      try {
+        return JSON.parse(localStorage.getItem("haiku_student_votes") || "{}");
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function setStudentVote(postId, value) {
+      const votes = getStudentVotes();
+      if (value === 0) {
+        delete votes[postId];
+      } else {
+        votes[postId] = value;
+      }
+      localStorage.setItem("haiku_student_votes", JSON.stringify(votes));
+    }
+
+    async function vote(postId, value, btn) {
+      const studentId = getStudentId();
+      if (!studentId) return;
+
+      btn.disabled = true;
+      try {
+        const res = await fetch("/api/student-votes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bot_name: studentId,
+            target_type: "post",
+            target_id: postId,
+            value: value
+          })
+        });
+        if (res.ok) {
+          const result = await res.json();
+          const finalValue = result.value;
+          setStudentVote(postId, finalValue);
+          // Update button styles
+          const controls = btn.parentElement;
+          controls.querySelectorAll(".vote-btn").forEach(b => {
+            b.classList.remove("voted-up", "voted-down");
+          });
+          if (finalValue === 1) {
+            controls.querySelector(".vote-btn:first-child").classList.add("voted-up");
+          } else if (finalValue === -1) {
+            controls.querySelector(".vote-btn:last-child").classList.add("voted-down");
+          }
+          refreshCommentsAndPost();
+        } else {
+          const err = await res.json();
+          alert(err.detail || "Vote failed");
+        }
+      } catch (e) {
+        alert("Vote failed: " + e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // Initialize vote buttons on page load
+    (function initVoteButtons() {
+      const votes = getStudentVotes();
+      const postId = {{ post.id }};
+      const controls = document.querySelector(".vote-controls");
+      if (!controls) return;
+      const upBtn = controls.querySelector(".vote-btn:first-child");
+      const downBtn = controls.querySelector(".vote-btn:last-child");
+      if (votes[postId] === 1 && upBtn) {
+        upBtn.classList.add("voted-up");
+      } else if (votes[postId] === -1 && downBtn) {
+        downBtn.classList.add("voted-down");
+      }
+    })();
   </script>
 </body>
 </html>
