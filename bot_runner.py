@@ -508,6 +508,36 @@ def should_strain(recent_posts: List[Dict[str, Any]], risk_tolerance: str) -> bo
     return False
 
 
+def compute_strain_level(recent_posts: List[Dict[str, Any]], risk_tolerance: str) -> int:
+    if not recent_posts:
+        return 0
+    min_posts = 5 if risk_tolerance == "low" else 3
+    window = recent_posts[:min_posts]
+    no_eval_count = sum(
+        1 for p in window if (p.get("upvotes", 0) + p.get("downvotes", 0)) == 0
+    )
+    high_quality_low = 0
+    for p in window:
+        score = p.get("score", 0)
+        quality = p.get("quality_score")
+        if quality is None:
+            quality = haiku_quality(p.get("body", ""))
+        if quality >= 0.85 and score <= 0:
+            high_quality_low += 1
+    no_eval_ratio = no_eval_count / float(min_posts)
+    hq_ratio = high_quality_low / float(min_posts)
+    if risk_tolerance == "low":
+        hq_norm = min(1.0, hq_ratio / 0.6)  # 3 of 5 triggers strain
+        no_eval_norm = no_eval_ratio
+    else:
+        hq_norm = min(1.0, hq_ratio / (1.0 / 3.0))  # 1 of 3 triggers strain
+        no_eval_norm = min(1.0, no_eval_ratio / 0.5)
+    strain = max(hq_norm, no_eval_norm)
+    if len(recent_posts) < min_posts:
+        strain *= len(recent_posts) / float(min_posts)
+    return int(round(strain * 100))
+
+
 async def ensure_strain_state(
     http_client: httpx.AsyncClient,
     bot: Bot,
@@ -569,6 +599,12 @@ async def handle_bot(
             http_client,
             "/api/posts/by_bot",
             params={"bot_name": bot.name, "limit": 5},
+        )
+        strain_level = compute_strain_level(recent_posts, bot.risk_tolerance)
+        await api_post(
+            http_client,
+            "/api/bots/strain",
+            {"bot_name": bot.name, "strain_level": strain_level},
         )
         if bot.name in top_third:
             if bot.state == "unsatisfied":

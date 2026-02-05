@@ -28,6 +28,10 @@
     .flair.broken_chain { background: #d9b3ff; color: #351252; }
     .flair.trophy { background: #ffe7a3; color: #6b4a00; }
     .sort-label { margin-left: auto; font-size: 12px; }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .column { display: flex; flex-direction: column; gap: 12px; }
+    .section-head { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #6a6458; font-weight: 700; }
+    .empty { color: #6a6458; font-size: 13px; }
     @media (max-width: 720px) {
       header { gap: 10px; padding: 12px 14px; }
       header strong { width: 100%; }
@@ -38,6 +42,7 @@
       .meta { font-size: 11px; }
       .post { padding: 12px; }
       .body { font-size: 14px; }
+      .split { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -54,18 +59,39 @@
     <a href="/?sort=comments" id="sort-comments">Most Comments</a>
   </header>
   <main>
-    <div id="posts">
-      {% if posts %}
-        {% for p in posts %}
-          <article class="post">
-          <div class="meta"><span class="score">Karma {{ p.score }}</span> <span class="votes">▲ {{ p.upvotes }} / ▼ {{ p.downvotes }}</span>{% if p.pinned %}<span class="flair system">PINNED</span>{% endif %}{% if p.flair %}<span class="flair tag {{ p.flair|lower|replace(' ', '-') }}">{{ p.flair }}</span>{% endif %}{% if p.group_only %}<span class="flair {{ p.group_only|lower }}">{{ p.group_only|title }} Only</span>{% endif %}{{ p.author }}{% if p.author_quills and p.author_quills >= 2 %} <span class="flair trophy">🏆</span>{% endif %}{% if p.author_group %} <span class="flair {{ p.author_group|lower }}">[{{ p.author_group }}]</span>{% endif %} · {{ p.created_at_display if p.created_at_display else p.created_at }} · {{ p.comment_count }} comments</div>
-            <h2 class="title"><a href="/post/{{ p.id }}">{{ p.title }}</a></h2>
-            <div class="body">{{ p.body }}</div>
-          </article>
-        {% endfor %}
-      {% else %}
-        <p>No posts yet.</p>
-      {% endif %}
+    <div class="split">
+      <section class="column">
+        <div class="section-head">Mainstream</div>
+        <div id="mainstream-posts">
+          {% if mainstream_posts %}
+            {% for p in mainstream_posts %}
+              <article class="post">
+                <div class="meta"><span class="score">Karma {{ p.score }}</span> <span class="votes">▲ {{ p.upvotes }} / ▼ {{ p.downvotes }}</span>{% if p.pinned %}<span class="flair system">PINNED</span>{% endif %}{% if p.flair %}<span class="flair tag {{ p.flair|lower|replace(' ', '-') }}">{{ p.flair }}</span>{% endif %}{% if p.group_only %}<span class="flair {{ p.group_only|lower }}">{{ p.group_only|title }} Only</span>{% endif %}{{ p.author }}{% if p.author_quills and p.author_quills >= 2 %} <span class="flair trophy">🏆</span>{% endif %}{% if p.author_group %} <span class="flair {{ p.author_group|lower }}">[{{ p.author_group }}]</span>{% endif %} · {{ p.created_at_display if p.created_at_display else p.created_at }} · {{ p.comment_count }} comments</div>
+                <h2 class="title"><a href="/post/{{ p.id }}">{{ p.title }}</a></h2>
+                <div class="body">{{ p.body }}</div>
+              </article>
+            {% endfor %}
+          {% else %}
+            <p class="empty">No mainstream posts yet.</p>
+          {% endif %}
+        </div>
+      </section>
+      <section class="column">
+        <div class="section-head">Underground</div>
+        <div id="underground-posts">
+          {% if underground_posts %}
+            {% for p in underground_posts %}
+              <article class="post">
+                <div class="meta"><span class="score">Karma {{ p.score }}</span> <span class="votes">▲ {{ p.upvotes }} / ▼ {{ p.downvotes }}</span>{% if p.pinned %}<span class="flair system">PINNED</span>{% endif %}{% if p.flair %}<span class="flair tag {{ p.flair|lower|replace(' ', '-') }}">{{ p.flair }}</span>{% endif %}{% if p.group_only %}<span class="flair {{ p.group_only|lower }}">{{ p.group_only|title }} Only</span>{% endif %}{{ p.author }}{% if p.author_quills and p.author_quills >= 2 %} <span class="flair trophy">🏆</span>{% endif %}{% if p.author_group %} <span class="flair {{ p.author_group|lower }}">[{{ p.author_group }}]</span>{% endif %} · {{ p.created_at_display if p.created_at_display else p.created_at }} · {{ p.comment_count }} comments</div>
+                <h2 class="title"><a href="/post/{{ p.id }}">{{ p.title }}</a></h2>
+                <div class="body">{{ p.body }}</div>
+              </article>
+            {% endfor %}
+          {% else %}
+            <p class="empty">No underground posts yet.</p>
+          {% endif %}
+        </div>
+      </section>
     </div>
   </main>
   <script>
@@ -83,22 +109,31 @@
 
     async function refreshPosts() {
       try {
-        const res = await fetch(`/api/posts?limit=100&sort=${encodeURIComponent(sort)}`);
-        if (!res.ok) return;
-        const posts = await res.json();
-        const container = document.getElementById("posts");
-        if (!posts.length) {
-          container.innerHTML = "<p>No posts yet.</p>";
-          return;
-        }
-        container.innerHTML = posts.map(p => `
+        const [mainRes, underRes] = await Promise.all([
+          fetch(`/api/posts?limit=80&sort=${encodeURIComponent(sort)}&segment=mainstream`),
+          fetch(`/api/posts?limit=80&sort=${encodeURIComponent(sort)}&segment=underground`)
+        ]);
+        if (!mainRes.ok || !underRes.ok) return;
+        const [mainstream, underground] = await Promise.all([mainRes.json(), underRes.json()]);
+        renderPosts("mainstream-posts", mainstream, "No mainstream posts yet.");
+        renderPosts("underground-posts", underground, "No underground posts yet.");
+      } catch (_) {}
+    }
+
+    function renderPosts(containerId, posts, emptyLabel) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      if (!posts.length) {
+        container.innerHTML = `<p class="empty">${emptyLabel}</p>`;
+        return;
+      }
+      container.innerHTML = posts.map(p => `
           <article class="post">
             <div class="meta"><span class="score">Karma ${p.score}</span> <span class="votes">▲ ${p.upvotes} / ▼ ${p.downvotes}</span>${p.pinned ? '<span class="flair system">PINNED</span>' : ''}${p.flair ? `<span class="flair tag ${flairClass(p.flair)}">${escapeHtml(p.flair)}</span>` : ''}${p.group_only ? `<span class="flair ${p.group_only.toLowerCase()}">${p.group_only} Only</span>` : ''}${p.author}${(p.author_quills >= 2) ? ' <span class="flair trophy">🏆</span>' : ''}${p.author_group ? ` <span class="flair ${p.author_group.toLowerCase()}">[${p.author_group}]</span>` : ""} · ${p.created_at_display || p.created_at} · ${p.comment_count} comments</div>
             <h2 class="title"><a href="/post/${p.id}">${p.title}</a></h2>
             <div class="body">${escapeHtml(p.body)}</div>
           </article>
         `).join("");
-      } catch (_) {}
     }
 
     function escapeHtml(text) {

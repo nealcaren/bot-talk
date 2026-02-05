@@ -3,9 +3,11 @@
 # ///
 
 import os
+import json
 import random
 import sqlite3
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import List, Optional, Literal, Dict
 
@@ -45,7 +47,8 @@ def init_db() -> None:
             state TEXT NOT NULL DEFAULT 'satisfied',
             latent_type TEXT NOT NULL DEFAULT 'innovator',
             risk_tolerance TEXT NOT NULL DEFAULT 'low',
-            writing_style_bias TEXT NOT NULL DEFAULT 'nature'
+            writing_style_bias TEXT NOT NULL DEFAULT 'nature',
+            strain_level REAL NOT NULL DEFAULT 0
         )
         """
     )
@@ -60,6 +63,8 @@ def init_db() -> None:
         cur.execute("ALTER TABLE bots ADD COLUMN risk_tolerance TEXT NOT NULL DEFAULT 'low'")
     if "writing_style_bias" not in cols:
         cur.execute("ALTER TABLE bots ADD COLUMN writing_style_bias TEXT NOT NULL DEFAULT 'nature'")
+    if "strain_level" not in cols:
+        cur.execute("ALTER TABLE bots ADD COLUMN strain_level REAL NOT NULL DEFAULT 0")
     if "artifact" not in cols:
         cur.execute("ALTER TABLE bots ADD COLUMN artifact TEXT")
     if "artifact_reason" not in cols:
@@ -91,6 +96,9 @@ def init_db() -> None:
     )
     cur.execute(
         "UPDATE bots SET writing_style_bias = 'nature' WHERE writing_style_bias IS NULL OR writing_style_bias = ''"
+    )
+    cur.execute(
+        "UPDATE bots SET strain_level = 0 WHERE strain_level IS NULL"
     )
     cur.execute(
         """
@@ -128,6 +136,18 @@ def init_db() -> None:
             created_at TEXT NOT NULL,
             FOREIGN KEY (post_id) REFERENCES posts(id),
             FOREIGN KEY (parent_comment_id) REFERENCES comments(id),
+            FOREIGN KEY (bot_id) REFERENCES bots(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS bot_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bot_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            detail TEXT,
             FOREIGN KEY (bot_id) REFERENCES bots(id)
         )
         """
@@ -274,6 +294,7 @@ class BotOut(BaseModel):
     latent_type: str
     risk_tolerance: str
     writing_style_bias: str
+    strain_level: float
     karma: int
     posts: int
     comments: int
@@ -292,6 +313,7 @@ class PostOut(BaseModel):
     title: str
     body: str
     created_at: str
+    created_at_display: Optional[str] = None
     author: str
     author_group: Optional[str]
     author_quills: Optional[int] = None
@@ -341,6 +363,11 @@ class BotStateUpdate(BaseModel):
     state: str = Field(..., min_length=3, max_length=20)
 
 
+class BotStrainUpdate(BaseModel):
+    bot_name: str = Field(..., min_length=2, max_length=40)
+    strain_level: float = Field(..., ge=0, le=100)
+
+
 class PostStatusUpdate(BaseModel):
     pinned: Optional[int] = None
     flair: Optional[str] = Field(None, max_length=30)
@@ -349,6 +376,16 @@ class PostStatusUpdate(BaseModel):
 
 def now_iso() -> str:
     return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+
+def display_time(iso_str: str) -> str:
+    try:
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        dt = dt.astimezone(ZoneInfo("America/New_York"))
+        stamp = dt.strftime("%m/%d %I:%M%p").lower()
+        return stamp.replace(" 0", " ")
+    except Exception:
+        return iso_str
 
 
 def normalize_state(value: Optional[str]) -> str:
@@ -442,15 +479,29 @@ def ensure_bot(
     latent_val = normalize_latent_type(latent_type)
     risk_val = normalize_risk_tolerance(risk_tolerance)
     style_val = normalize_writing_style_bias(writing_style_bias)
+    created_at = now_iso()
     cur = conn.execute(
         """
         INSERT INTO bots (name, created_at, group_name, state, latent_type, risk_tolerance, writing_style_bias, student_email)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (bot_name, now_iso(), group, state_val, latent_val, risk_val, style_val, student_email),
+        (bot_name, created_at, group, state_val, latent_val, risk_val, style_val, student_email),
     )
     conn.commit()
-    return int(cur.lastrowid)
+    bot_id = int(cur.lastrowid)
+    log_bot_event(
+        conn,
+        bot_id,
+        "created",
+        {
+            "state": state_val,
+            "latent_type": latent_val,
+            "risk_tolerance": risk_val,
+            "topic": style_val,
+        },
+        created_at=created_at,
+    )
+    return bot_id
 
 
 def post_score(conn: sqlite3.Connection, post_id: int) -> int:
@@ -508,6 +559,24 @@ def bot_karma(conn: sqlite3.Connection, bot_id: int) -> int:
         (bot_id, bot_id),
     ).fetchone()
     return int(row["karma"] or 0)
+
+
+def log_bot_event(
+    conn: sqlite3.Connection,
+    bot_id: int,
+    event_type: str,
+    detail: Optional[dict] = None,
+    created_at: Optional[str] = None,
+) -> None:
+    payload = json.dumps(detail) if detail is not None else None
+    conn.execute(
+        """
+        INSERT INTO bot_events (bot_id, created_at, event_type, detail)
+        VALUES (?, ?, ?, ?)
+        """,
+        (bot_id, created_at or now_iso(), event_type, payload),
+    )
+    conn.commit()
 
 
 def bot_behavioral_metrics(conn: sqlite3.Connection, bot_id: int) -> dict:
@@ -600,7 +669,7 @@ def create_bot(payload: BotCreate):
         )
         row = conn.execute(
             """
-            SELECT group_name, state, latent_type, risk_tolerance, writing_style_bias
+            SELECT group_name, state, latent_type, risk_tolerance, writing_style_bias, strain_level
             FROM bots WHERE id = ?
             """,
             (bot_id,),
@@ -620,6 +689,7 @@ def create_bot(payload: BotCreate):
             latent_type=row["latent_type"] if row else "innovator",
             risk_tolerance=row["risk_tolerance"] if row else "low",
             writing_style_bias=row["writing_style_bias"] if row else "nature",
+            strain_level=float(row["strain_level"]) if row and row["strain_level"] is not None else 0.0,
             karma=karma,
             posts=posts,
             comments=comments,
@@ -634,7 +704,7 @@ def list_bots():
     try:
         rows = conn.execute(
             """
-            SELECT id, name, group_name, state, latent_type, risk_tolerance, writing_style_bias
+            SELECT id, name, group_name, state, latent_type, risk_tolerance, writing_style_bias, strain_level
             FROM bots ORDER BY name
             """
         ).fetchall()
@@ -657,6 +727,7 @@ def list_bots():
                     latent_type=row["latent_type"],
                     risk_tolerance=row["risk_tolerance"],
                     writing_style_bias=row["writing_style_bias"],
+                    strain_level=float(row["strain_level"] or 0),
                     karma=karma,
                     posts=posts,
                     comments=comments,
@@ -673,7 +744,7 @@ def get_bot(bot_name: str):
     try:
         row = conn.execute(
             """
-            SELECT id, name, group_name, state, latent_type, risk_tolerance, writing_style_bias
+            SELECT id, name, group_name, state, latent_type, risk_tolerance, writing_style_bias, strain_level
             FROM bots WHERE name = ?
             """,
             (bot_name,),
@@ -696,10 +767,44 @@ def get_bot(bot_name: str):
             latent_type=row["latent_type"],
             risk_tolerance=row["risk_tolerance"],
             writing_style_bias=row["writing_style_bias"],
+            strain_level=float(row["strain_level"] or 0),
             karma=karma,
             posts=posts,
             comments=comments,
         )
+    finally:
+        conn.close()
+
+
+@app.get("/api/bots/{bot_name}/history")
+def bot_history(bot_name: str):
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT id FROM bots WHERE name = ?", (bot_name,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        bot_id = int(row["id"])
+        events = conn.execute(
+            """
+            SELECT id, created_at, event_type, detail
+            FROM bot_events
+            WHERE bot_id = ?
+            ORDER BY created_at ASC, id ASC
+            """,
+            (bot_id,),
+        ).fetchall()
+        out = []
+        for e in events:
+            detail = json.loads(e["detail"]) if e["detail"] else None
+            out.append(
+                {
+                    "id": e["id"],
+                    "created_at": e["created_at"],
+                    "event_type": e["event_type"],
+                    "detail": detail,
+                }
+            )
+        return out
     finally:
         conn.close()
 
@@ -711,7 +816,7 @@ def list_active_bots():
     try:
         rows = conn.execute(
             """
-            SELECT name, state, latent_type, risk_tolerance, writing_style_bias
+            SELECT name, state, latent_type, risk_tolerance, writing_style_bias, strain_level
             FROM bots
             WHERE name != 'admin'
             """
@@ -723,6 +828,7 @@ def list_active_bots():
                 "latent_type": row["latent_type"],
                 "risk_tolerance": row["risk_tolerance"],
                 "writing_style_bias": row["writing_style_bias"],
+                "strain_level": float(row["strain_level"] or 0),
             }
             for row in rows
         ]
@@ -747,6 +853,19 @@ def create_post(payload: PostCreate):
         )
         conn.commit()
         post_id = int(cur.lastrowid)
+        log_bot_event(
+            conn,
+            bot_id,
+            "post",
+            {
+                "post_id": post_id,
+                "title": title,
+                "quality_score": payload.quality_score,
+                "flair": payload.flair,
+                "karma": bot_karma(conn, bot_id),
+            },
+            created_at=created_at,
+        )
         group_row = conn.execute(
             "SELECT group_name FROM bots WHERE id = ?", (bot_id,)
         ).fetchone()
@@ -755,6 +874,7 @@ def create_post(payload: PostCreate):
             title=payload.title,
             body=payload.body,
             created_at=created_at,
+            created_at_display=display_time(created_at),
             author=payload.bot_name,
             author_group=group_row["group_name"] if group_row else None,
             score=0,
@@ -777,6 +897,7 @@ def list_posts(
     sort: str = "top",
     viewer_bot: Optional[str] = None,
     view: str = "feed",
+    segment: Optional[str] = None,
 ):
     conn = get_db()
     try:
@@ -784,6 +905,8 @@ def list_posts(
             raise HTTPException(status_code=400, detail="sort must be latest, comments, or top")
         if view not in ("feed", "void"):
             raise HTTPException(status_code=400, detail="view must be feed or void")
+        if segment and segment not in ("mainstream", "underground"):
+            raise HTTPException(status_code=400, detail="segment must be mainstream or underground")
         bot_state = None
         if viewer_bot:
             row = conn.execute(
@@ -791,18 +914,27 @@ def list_posts(
                 (viewer_bot,),
             ).fetchone()
             bot_state = row["state"] if row else "satisfied"
-        if bot_state == "satisfied":
-            if view == "void":
-                return []
-            limit = min(limit, 20)
-            offset = 0
-        elif bot_state == "unsatisfied" and view == "void":
-            offset = 20 + max(offset, 0)
+            if bot_state == "satisfied":
+                if view == "void":
+                    return []
+                limit = min(limit, 20)
+                offset = 0
+            elif bot_state == "unsatisfied" and view == "void":
+                offset = 20 + max(offset, 0)
+        state_filter = None
+        if segment == "mainstream":
+            state_filter = "satisfied"
+        elif segment == "underground":
+            state_filter = "unsatisfied"
         order_clause = "p.created_at DESC"
         if sort == "comments":
             order_clause = "comment_count DESC, p.created_at DESC"
         if sort == "top":
             order_clause = "score DESC, p.created_at DESC"
+        where_clause = "WHERE b.state = ?" if state_filter else ""
+        params = [limit, offset]
+        if state_filter:
+            params = [state_filter, limit, offset]
         rows = conn.execute(
             """
             SELECT p.id, p.title, p.body, p.created_at, p.pinned, p.flair, p.quality_score, p.group_only,
@@ -816,10 +948,11 @@ def list_posts(
                    (SELECT COALESCE(SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END), 0) FROM votes v WHERE v.target_type='post' AND v.target_id=p.id) AS downvotes
             FROM posts p
             JOIN bots b ON b.id = p.bot_id
+            """ + where_clause + """
             ORDER BY p.pinned DESC, """ + order_clause + """
             LIMIT ? OFFSET ?
             """,
-            (limit, offset),
+            params,
         ).fetchall()
         out: List[PostOut] = []
         for row in rows:
@@ -829,6 +962,7 @@ def list_posts(
                     title=row["title"],
                     body=row["body"],
                     created_at=row["created_at"],
+                    created_at_display=display_time(row["created_at"]),
                     author=row["author"],
                     author_group=row["author_group"],
                     author_quills=row["author_quills"],
@@ -876,6 +1010,7 @@ def list_posts_by_bot(bot_name: str, limit: int = 10, offset: int = 0):
                 title=row["title"],
                 body=row["body"],
                 created_at=row["created_at"],
+                created_at_display=display_time(row["created_at"]),
                 author=row["author"],
                 author_group=row["author_group"],
                 author_quills=row["author_quills"],
@@ -934,6 +1069,7 @@ def list_posts_by_latent_type(
                 title=row["title"],
                 body=row["body"],
                 created_at=row["created_at"],
+                created_at_display=display_time(row["created_at"]),
                 author=row["author"],
                 author_group=row["author_group"],
                 author_quills=row["author_quills"],
@@ -980,6 +1116,7 @@ def get_post(post_id: int):
             title=row["title"],
             body=row["body"],
             created_at=row["created_at"],
+            created_at_display=display_time(row["created_at"]),
             author=row["author"],
             author_group=row["author_group"],
             author_quills=row["author_quills"],
@@ -1144,14 +1281,47 @@ def update_bot_state(payload: BotStateUpdate):
     state = normalize_state(payload.state)
     conn = get_db()
     try:
+        row = conn.execute(
+            "SELECT id, state FROM bots WHERE name = ?",
+            (payload.bot_name,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        if row["state"] == state:
+            return {"bot_name": payload.bot_name, "state": state}
+        conn.execute(
+            "UPDATE bots SET state = ? WHERE id = ?",
+            (state, row["id"]),
+        )
+        conn.commit()
+        log_bot_event(
+            conn,
+            int(row["id"]),
+            "state_change",
+            {
+                "from": row["state"],
+                "to": state,
+                "karma": bot_karma(conn, int(row["id"])),
+            },
+        )
+        return {"bot_name": payload.bot_name, "state": state}
+    finally:
+        conn.close()
+
+
+@app.post("/api/bots/strain", dependencies=[Depends(require_api_key)])
+def update_bot_strain(payload: BotStrainUpdate):
+    level = max(0.0, min(100.0, float(payload.strain_level)))
+    conn = get_db()
+    try:
         cur = conn.execute(
-            "UPDATE bots SET state = ? WHERE name = ?",
-            (state, payload.bot_name),
+            "UPDATE bots SET strain_level = ? WHERE name = ?",
+            (level, payload.bot_name),
         )
         conn.commit()
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="Bot not found")
-        return {"bot_name": payload.bot_name, "state": state}
+        return {"bot_name": payload.bot_name, "strain_level": level}
     finally:
         conn.close()
 
@@ -1193,47 +1363,60 @@ def index(request: Request, sort: str = "top"):
             order_clause = "comment_count DESC, p.created_at DESC"
         if sort == "top":
             order_clause = "score DESC, p.created_at DESC"
-        posts = conn.execute(
-            """
-            SELECT p.id, p.title, p.body, p.created_at, p.pinned, p.flair, p.quality_score, p.group_only,
-                   b.name AS author, b.group_name AS author_group,
-                   (SELECT COUNT(*) FROM posts p2 WHERE p2.bot_id = p.bot_id AND p2.flair = 'GOLDEN_QUILL') AS author_quills,
-                   (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) AS comment_count,
-                   (CASE WHEN p.group_only IS NOT NULL THEN 0 ELSE
-                        (SELECT COALESCE(SUM(value), 0) FROM votes v WHERE v.target_type = 'post' AND v.target_id = p.id)
-                    END) AS score,
-                   (SELECT COALESCE(SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END), 0) FROM votes v WHERE v.target_type='post' AND v.target_id=p.id) AS upvotes,
-                   (SELECT COALESCE(SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END), 0) FROM votes v WHERE v.target_type='post' AND v.target_id=p.id) AS downvotes
-            FROM posts p
-            JOIN bots b ON b.id = p.bot_id
-            ORDER BY p.pinned DESC, """ + order_clause + """
-            LIMIT 100
-            """
-        ).fetchall()
-        rows = []
-        for p in posts:
-            rows.append(
-                {
-                    "id": p["id"],
-                    "title": p["title"],
-                    "body": p["body"],
-                    "created_at": p["created_at"],
-                    "author": p["author"],
-                    "author_group": p["author_group"],
-                    "author_quills": p["author_quills"],
-                    "score": p["score"],
-                    "upvotes": p["upvotes"],
-                    "downvotes": p["downvotes"],
-                    "comment_count": p["comment_count"],
-                    "pinned": p["pinned"],
-                    "flair": p["flair"],
-                    "quality_score": p["quality_score"],
-                    "group_only": p["group_only"],
-                }
-            )
+        def fetch_segment(state_filter: str) -> List[dict]:
+            posts = conn.execute(
+                """
+                SELECT p.id, p.title, p.body, p.created_at, p.pinned, p.flair, p.quality_score, p.group_only,
+                       b.name AS author, b.group_name AS author_group,
+                       (SELECT COUNT(*) FROM posts p2 WHERE p2.bot_id = p.bot_id AND p2.flair = 'GOLDEN_QUILL') AS author_quills,
+                       (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) AS comment_count,
+                       (CASE WHEN p.group_only IS NOT NULL THEN 0 ELSE
+                            (SELECT COALESCE(SUM(value), 0) FROM votes v WHERE v.target_type = 'post' AND v.target_id = p.id)
+                        END) AS score,
+                       (SELECT COALESCE(SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END), 0) FROM votes v WHERE v.target_type='post' AND v.target_id=p.id) AS upvotes,
+                       (SELECT COALESCE(SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END), 0) FROM votes v WHERE v.target_type='post' AND v.target_id=p.id) AS downvotes
+                FROM posts p
+                JOIN bots b ON b.id = p.bot_id
+                WHERE b.state = ?
+                ORDER BY p.pinned DESC, """ + order_clause + """
+                LIMIT 100
+                """,
+                (state_filter,),
+            ).fetchall()
+            rows = []
+            for p in posts:
+                rows.append(
+                    {
+                        "id": p["id"],
+                        "title": p["title"],
+                        "body": p["body"],
+                        "created_at": p["created_at"],
+                        "created_at_display": display_time(p["created_at"]),
+                        "author": p["author"],
+                        "author_group": p["author_group"],
+                        "author_quills": p["author_quills"],
+                        "score": p["score"],
+                        "upvotes": p["upvotes"],
+                        "downvotes": p["downvotes"],
+                        "comment_count": p["comment_count"],
+                        "pinned": p["pinned"],
+                        "flair": p["flair"],
+                        "quality_score": p["quality_score"],
+                        "group_only": p["group_only"],
+                    }
+                )
+            return rows
+
+        mainstream_posts = fetch_segment("satisfied")
+        underground_posts = fetch_segment("unsatisfied")
         return templates.TemplateResponse(
             "index.html",
-            {"request": request, "posts": rows, "sort": sort},
+            {
+                "request": request,
+                "mainstream_posts": mainstream_posts,
+                "underground_posts": underground_posts,
+                "sort": sort,
+            },
         )
     finally:
         conn.close()
@@ -1289,6 +1472,7 @@ def post_page(request: Request, post_id: int):
                     "title": post["title"],
                     "body": post["body"],
                 "created_at": post["created_at"],
+                "created_at_display": display_time(post["created_at"]),
                 "author": post["author"],
                 "author_group": post["author_group"],
                 "author_quills": post["author_quills"],
@@ -1305,12 +1489,106 @@ def post_page(request: Request, post_id: int):
         conn.close()
 
 
+@app.get("/bot/{bot_name}", response_class=HTMLResponse)
+def bot_profile_page(request: Request, bot_name: str):
+    conn = get_db()
+    try:
+        bot_row = conn.execute(
+            """
+            SELECT id, name, state, latent_type, risk_tolerance, writing_style_bias, strain_level
+            FROM bots WHERE name = ?
+            """,
+            (bot_name,),
+        ).fetchone()
+        if not bot_row:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        bot_id = int(bot_row["id"])
+        events = conn.execute(
+            """
+            SELECT id, created_at, event_type, detail
+            FROM bot_events
+            WHERE bot_id = ?
+            ORDER BY created_at ASC, id ASC
+            """,
+            (bot_id,),
+        ).fetchall()
+        timeline = []
+        for idx, e in enumerate(events, start=1):
+            detail = json.loads(e["detail"]) if e["detail"] else {}
+            summary = e["event_type"].replace("_", " ").title()
+            description = ""
+            post_id = None
+            if e["event_type"] == "created":
+                summary = "Joined the competition"
+                latent = detail.get("latent_type")
+                topic = detail.get("topic")
+                description = f"Latent type: {latent}. Topic: {topic}."
+            elif e["event_type"] == "state_change":
+                summary = f"State shift: {detail.get('from')} → {detail.get('to')}"
+                if "karma" in detail:
+                    description = f"Karma at shift: {detail.get('karma')}."
+            elif e["event_type"] == "post":
+                post_id = detail.get("post_id")
+                title = detail.get("title") or "Untitled"
+                quality = detail.get("quality_score")
+                label = None
+                if isinstance(quality, (int, float)):
+                    if quality >= 0.85:
+                        label = "strict haiku"
+                    elif quality >= 0.6:
+                        label = "haiku-like"
+                    elif quality >= 0.3:
+                        label = "loose form"
+                    else:
+                        label = "nonconforming"
+                summary = f"Posted: {title}"
+                if label and "karma" in detail:
+                    description = f"Form: {label}. Karma: {detail.get('karma')}."
+                elif label:
+                    description = f"Form: {label}."
+            timeline.append(
+                {
+                    "turn": idx,
+                    "created_at": e["created_at"],
+                    "created_at_display": display_time(e["created_at"]),
+                    "summary": summary,
+                    "description": description,
+                    "post_id": post_id,
+                }
+            )
+        return templates.TemplateResponse(
+            "bot_profile.html",
+            {
+                "request": request,
+                "bot": {
+                    "id": bot_id,
+                    "name": bot_row["name"],
+                    "state": bot_row["state"],
+                    "latent_type": bot_row["latent_type"],
+                    "risk_tolerance": bot_row["risk_tolerance"],
+                    "writing_style_bias": bot_row["writing_style_bias"],
+                    "strain_level": float(bot_row["strain_level"] or 0),
+                    "karma": bot_karma(conn, bot_id),
+                    "posts": conn.execute(
+                        "SELECT COUNT(*) AS c FROM posts WHERE bot_id = ?", (bot_id,)
+                    ).fetchone()["c"],
+                    "comments": conn.execute(
+                        "SELECT COUNT(*) AS c FROM comments WHERE bot_id = ?", (bot_id,)
+                    ).fetchone()["c"],
+                },
+                "timeline": timeline,
+            },
+        )
+    finally:
+        conn.close()
+
+
 @app.get("/bots", response_class=HTMLResponse)
 def bots_page(request: Request, sort: str = "karma"):
     conn = get_db()
     try:
         rows = conn.execute(
-            """SELECT id, name, state, latent_type, risk_tolerance, writing_style_bias
+            """SELECT id, name, state, latent_type, risk_tolerance, writing_style_bias, strain_level
                FROM bots
                WHERE name NOT IN ('admin', 'Haiku_Laureate')
                ORDER BY name"""
@@ -1326,6 +1604,7 @@ def bots_page(request: Request, sort: str = "karma"):
                     "latent_type": row["latent_type"],
                     "risk_tolerance": row["risk_tolerance"],
                     "writing_style_bias": row["writing_style_bias"],
+                    "strain_level": float(row["strain_level"] or 0),
                     "karma": bot_karma(conn, bot_id),
                     "posts": conn.execute(
                         "SELECT COUNT(*) AS c FROM posts WHERE bot_id = ?", (bot_id,)
