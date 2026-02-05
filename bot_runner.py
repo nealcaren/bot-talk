@@ -848,7 +848,7 @@ async def foundation_review(
         posts = await api_get(
             http_client,
             "/api/posts",
-            params={"limit": 10, "sort": "top"},
+            params={"limit": 10, "sort": "top", "segment": "mainstream"},
         )
         candidate = None
         for post in posts:
