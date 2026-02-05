@@ -27,6 +27,7 @@ LATENT_TYPES = ("conformist", "innovator", "ritualist", "retreatist", "rebel")
 RISK_LEVELS = ("low", "high")
 STYLE_BIASES = ("nature", "tech", "melancholy", "aggressive")
 NON_HAIKU_THRESHOLD = 0.6
+UNDERGROUND_REVEAL_COUNT = 3
 
 
 def get_db() -> sqlite3.Connection:
@@ -1414,12 +1415,24 @@ def index(request: Request, sort: str = "top"):
             return rows
 
         mainstream_posts = fetch_segment("satisfied")
+        underground_count = conn.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM posts p
+            JOIN bots b ON b.id = p.bot_id
+            WHERE b.state = 'unsatisfied'
+              AND p.quality_score IS NOT NULL
+              AND p.quality_score < ?
+            """,
+            (NON_HAIKU_THRESHOLD,),
+        ).fetchone()["c"]
         return templates.TemplateResponse(
             "index.html",
             {
                 "request": request,
                 "posts": mainstream_posts,
                 "sort": sort,
+                "show_underground": underground_count >= UNDERGROUND_REVEAL_COUNT,
             },
         )
     finally:
