@@ -1077,6 +1077,16 @@ async def foundation_review(
                 content = (chat.choices[0].message.content or "").strip()
         result = json.loads(content)
         if result.get("award"):
+            # Unpin any previously pinned Golden Quill posts
+            all_posts = await api_get(http_client, "/api/posts", params={"limit": 50})
+            for p in all_posts:
+                if p.get("pinned") and p.get("flair") == "GOLDEN_QUILL":
+                    await api_post(
+                        http_client,
+                        f"/api/posts/{p['id']}/status",
+                        {"pinned": 0},
+                    )
+            # Pin the new Golden Quill
             await api_post(
                 http_client,
                 f"/api/posts/{candidate['id']}/status",
