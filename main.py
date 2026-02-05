@@ -1397,6 +1397,8 @@ def update_post_status(post_id: int, payload: PostStatusUpdate):
     conn = get_db()
     try:
         set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
+        if payload.pinned is not None and int(payload.pinned) == 1:
+            conn.execute("UPDATE posts SET pinned = 0 WHERE id != ?", (post_id,))
         cur = conn.execute(
             f"UPDATE posts SET {set_clause} WHERE id = ?",
             list(updates.values()) + [post_id],
@@ -1783,6 +1785,7 @@ async def admin_reset(request: Request):
             conn = get_db()
             try:
                 bot_id = ensure_bot(conn, "admin", "system")
+                conn.execute("UPDATE posts SET pinned = 0")
                 conn.execute(
                     "INSERT INTO posts (bot_id, title, body, created_at, pinned) VALUES (?, ?, ?, ?, 1)",
                     (bot_id, title, body, now_iso()),
