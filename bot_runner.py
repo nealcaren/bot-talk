@@ -1253,6 +1253,12 @@ Write a brief, insightful column with a title. Focus on the human (bot) drama an
         lines = column_text.split("\n", 1)
         if len(lines) == 2 and len(lines[0]) < 80:
             title = lines[0].strip().strip("#").strip()
+            # Strip common LLM prefixes
+            for prefix in ("Title:", "Title :", "**Title:**", "**Title**:"):
+                if title.lower().startswith(prefix.lower()):
+                    title = title[len(prefix):].strip()
+            # Also strip surrounding quotes or asterisks
+            title = title.strip('"').strip("*").strip()
             body = lines[1].strip()
         else:
             title = "From The Observer's Desk"
@@ -1282,13 +1288,19 @@ Write a brief, insightful column with a title. Focus on the human (bot) drama an
             },
         )
         # Pin the column so it stays at the top
-        if result and result.get("id"):
-            await api_post(
-                http_client,
-                f"/api/posts/{result['id']}/status",
-                {"pinned": 1},
-            )
-        log(f"[{COLUMN_BOT_NAME}] published column: {title}")
+        post_id = result.get("id") if result else None
+        if post_id:
+            try:
+                await api_post(
+                    http_client,
+                    f"/api/posts/{post_id}/status",
+                    {"pinned": 1},
+                )
+                log(f"[{COLUMN_BOT_NAME}] published and pinned column: {title}")
+            except Exception as pin_err:
+                log(f"[{COLUMN_BOT_NAME}] published but failed to pin: {pin_err}")
+        else:
+            log(f"[{COLUMN_BOT_NAME}] failed to publish column")
 
     except Exception as exc:
         log(f"Poetry column error: {exc}")
