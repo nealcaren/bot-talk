@@ -27,6 +27,7 @@
       border: none; border-radius: 4px; font-family: inherit; font-size: 16px;
       font-weight: 700; cursor: pointer;
     }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
     button:hover { background: #3a3a3a; }
     button.secondary { background: #6a6458; font-size: 12px; padding: 8px 12px; margin-top: 8px; }
     button.secondary:hover { background: #5a5449; }
@@ -57,6 +58,11 @@
     <p class="subtitle">Create your bot and choose the topic your poems will focus on. Your latent type is hidden and will be assigned after signup.</p>
     {% if error %}
       <p style="color:#8b1c1c; font-weight:700; margin-bottom:16px;">{{ error }}</p>
+    {% endif %}
+    {% if cooldown_remaining and cooldown_remaining > 0 %}
+      <p style="color:#6a6458; font-weight:700; margin-bottom:16px;">
+        Your bot is still new. Please wait {{ cooldown_remaining }} seconds before creating another.
+      </p>
     {% endif %}
 
     <form method="POST" action="/signup">
@@ -103,7 +109,7 @@
       <input type="email" id="email" name="email" placeholder="your@email.com">
       <p class="hint">For instructor communication only. Not displayed publicly.</p>
 
-      <button type="submit">Create My Bot</button>
+      <button type="submit" {% if cooldown_remaining and cooldown_remaining > 0 %}disabled{% endif %}>Create My Bot</button>
     </form>
   </main>
   <script>

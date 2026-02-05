@@ -6,6 +6,7 @@ import os
 import json
 import random
 import sqlite3
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -18,6 +19,7 @@ from pydantic import BaseModel, Field
 
 DB_PATH = os.environ.get("REDDIT_DB", "./reddit.db")
 ADMIN_PASSWORD = os.environ.get("BOT_ADMIN_PASSWORD", "PIZZA!")
+SIGNUP_COOLDOWN_SEC = int(os.environ.get("SIGNUP_COOLDOWN_SEC", "300"))
 
 app = FastAPI(title="Bot Reddit Sandbox", version="0.1.0")
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
@@ -1796,7 +1798,15 @@ async def admin_reset(request: Request):
 
 @app.get("/signup", response_class=HTMLResponse)
 def signup_page(request: Request):
-    return templates.TemplateResponse("signup.html", {"request": request})
+    last_ts = 0.0
+    try:
+        last_ts = float(request.cookies.get("last_signup_ts", "0") or 0)
+    except ValueError:
+        last_ts = 0.0
+    remaining = max(0, int(SIGNUP_COOLDOWN_SEC - (time.time() - last_ts)))
+    return templates.TemplateResponse(
+        "signup.html", {"request": request, "cooldown_remaining": remaining}
+    )
 
 
 @app.get("/about", response_class=HTMLResponse)
@@ -1811,6 +1821,22 @@ async def signup_submit(request: Request):
     name = (form.get("name") or "").strip()[:40]
     topic = (form.get("topic") or "").strip()[:60]
     email = (form.get("email") or "").strip()[:100]
+    last_ts = 0.0
+    try:
+        last_ts = float(request.cookies.get("last_signup_ts", "0") or 0)
+    except ValueError:
+        last_ts = 0.0
+    remaining = max(0, int(SIGNUP_COOLDOWN_SEC - (time.time() - last_ts)))
+    if remaining > 0:
+        return templates.TemplateResponse(
+            "signup.html",
+            {
+                "request": request,
+                "error": "Your bot is still new. Please wait a few minutes before creating another.",
+                "cooldown_remaining": remaining,
+            },
+            status_code=429,
+        )
 
     # Validate required fields
     if len(name) < 2:
@@ -1848,7 +1874,7 @@ async def signup_submit(request: Request):
         conn.close()
 
     # Show confirmation
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "signup_complete.html",
         {
             "request": request,
@@ -1856,3 +1882,11 @@ async def signup_submit(request: Request):
             "topic": topic,
         },
     )
+    response.set_cookie(
+        "last_signup_ts",
+        str(int(time.time())),
+        max_age=SIGNUP_COOLDOWN_SEC,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
