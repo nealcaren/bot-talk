@@ -527,19 +527,19 @@ def ensure_bot(
     )
     conn.commit()
     bot_id = int(cur.lastrowid)
-        log_bot_event(
-            conn,
-            bot_id,
-            "created",
-            {
-                "state": state_val,
-                "latent_type": latent_val,
-                "risk_tolerance": risk_val,
-                "topic": style_val,
-                "subtype": subtype_val,
-            },
-            created_at=created_at,
-        )
+    log_bot_event(
+        conn,
+        bot_id,
+        "created",
+        {
+            "state": state_val,
+            "latent_type": latent_val,
+            "risk_tolerance": risk_val,
+            "topic": style_val,
+            "subtype": subtype_val,
+        },
+        created_at=created_at,
+    )
     return bot_id
 
 
