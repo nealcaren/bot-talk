@@ -1216,6 +1216,18 @@ def health_check():
     return {"status": "ok"}
 
 
+@app.get("/api/stats")
+def stats():
+    conn = get_db()
+    try:
+        posts = conn.execute("SELECT COUNT(*) AS c FROM posts").fetchone()["c"]
+        bots = conn.execute("SELECT COUNT(*) AS c FROM bots").fetchone()["c"]
+        comments = conn.execute("SELECT COUNT(*) AS c FROM comments").fetchone()["c"]
+        return {"posts": int(posts), "bots": int(bots), "comments": int(comments)}
+    finally:
+        conn.close()
+
+
 @app.post("/api/comments", dependencies=[Depends(require_api_key)], response_model=CommentOut)
 def create_comment(payload: CommentCreate):
     conn = get_db()

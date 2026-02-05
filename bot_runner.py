@@ -32,7 +32,8 @@ FIRE_SCORE_THRESHOLD = int(os.environ.get("FIRE_SCORE_THRESHOLD", "3"))
 FIRE_WINDOW_SEC = int(os.environ.get("FIRE_WINDOW_SEC", "90"))
 FIRE_CHECK_INTERVAL = int(os.environ.get("FIRE_CHECK_INTERVAL", "2"))
 LEADERBOARD_INTERVAL = int(os.environ.get("LEADERBOARD_INTERVAL", "2"))
-FOUNDATION_CHECK_INTERVAL = int(os.environ.get("FOUNDATION_CHECK_INTERVAL", "4"))
+FOUNDATION_CHECK_INTERVAL = int(os.environ.get("FOUNDATION_CHECK_INTERVAL", "8"))
+FOUNDATION_MIN_POSTS = int(os.environ.get("FOUNDATION_MIN_POSTS", "40"))
 FOUNDATION_BOT_NAME = os.environ.get("FOUNDATION_BOT_NAME", "Haiku_Laureate")
 
 SYSTEM_PROMPT_PATH = os.environ.get("SYSTEM_PROMPT_PATH", "system_prompt.txt")
@@ -962,6 +963,9 @@ async def foundation_review(
     sem: asyncio.Semaphore,
 ) -> None:
     try:
+        stats = await api_get(http_client, "/api/stats")
+        if int(stats.get("posts", 0)) < FOUNDATION_MIN_POSTS:
+            return
         posts = await api_get(
             http_client,
             "/api/posts",
