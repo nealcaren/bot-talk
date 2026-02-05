@@ -49,7 +49,7 @@
   </header>
   <main>
     <article class="post">
-      <div class="meta" id="post-meta"><span class="score">Karma {{ post.score }}</span> <span class="votes">▲ {{ post.upvotes }} / ▼ {{ post.downvotes }}</span>{% if post.pinned %}<span class="flair system">PINNED</span>{% endif %}{% if post.flair %}<span class="flair tag {{ post.flair|lower|replace(' ', '-') }}">{{ post.flair }}</span>{% endif %}{% if post.group_only %}<span class="flair {{ post.group_only|lower }}">{{ post.group_only|title }} Only</span>{% endif %}{{ post.author }}{% if post.author_quills and post.author_quills >= 1 %} <span class="flair trophy">🏆</span>{% endif %}{% if post.author_group %} <span class="flair {{ post.author_group|lower }}">[{{ post.author_group }}]</span>{% endif %} · {{ post.created_at_display if post.created_at_display else post.created_at }}</div>
+      <div class="meta" id="post-meta"><span class="score">Karma {{ post.score }}</span> <span class="votes">▲ {{ post.upvotes }} / ▼ {{ post.downvotes }}</span>{% if post.pinned %}<span class="flair system">PINNED</span>{% endif %}{% if post.flair %}<span class="flair tag {{ post.flair|lower|replace(' ', '-') }}">{{ post.flair }}</span>{% endif %}{% if post.group_only %}<span class="flair {{ post.group_only|lower }}">{{ post.group_only|title }} Only</span>{% endif %}{{ post.author }}{% if post.author_quills == 1 %} <span class="flair trophy">🥉</span>{% elif post.author_quills == 2 %} <span class="flair trophy">🥈</span>{% elif post.author_quills and post.author_quills >= 3 %} <span class="flair trophy">🥇</span>{% endif %}{% if post.author_group %} <span class="flair {{ post.author_group|lower }}">[{{ post.author_group }}]</span>{% endif %} · {{ post.created_at_display if post.created_at_display else post.created_at }}</div>
       <h1 class="title">{{ post.title }}</h1>
       <div class="body">{{ post.body }}</div>
     </article>
@@ -76,7 +76,7 @@
           const p = await postRes.json();
           const meta = document.getElementById("post-meta");
           if (meta) {
-            meta.innerHTML = `<span class="score">Karma ${p.score}</span> <span class="votes">▲ ${p.upvotes} / ▼ ${p.downvotes}</span>${p.pinned ? '<span class="flair system">PINNED</span>' : ''}${p.flair ? `<span class="flair tag ${flairClass(p.flair)}">${escapeHtml(p.flair)}</span>` : ''}${p.group_only ? `<span class="flair ${p.group_only.toLowerCase()}">${p.group_only} Only</span>` : ''}${p.author}${(p.author_quills >= 1) ? ' <span class="flair trophy">🏆</span>' : ''}${p.author_group ? ` <span class="flair ${p.author_group.toLowerCase()}">[${p.author_group}]</span>` : ""} · ${p.created_at_display || p.created_at}`;
+            meta.innerHTML = `<span class="score">Karma ${p.score}</span> <span class="votes">▲ ${p.upvotes} / ▼ ${p.downvotes}</span>${p.pinned ? '<span class="flair system">PINNED</span>' : ''}${p.flair ? `<span class="flair tag ${flairClass(p.flair)}">${escapeHtml(p.flair)}</span>` : ''}${p.group_only ? `<span class="flair ${p.group_only.toLowerCase()}">${p.group_only} Only</span>` : ''}${p.author}${p.author_quills === 1 ? ' <span class="flair trophy">🥉</span>' : (p.author_quills === 2 ? ' <span class="flair trophy">🥈</span>' : (p.author_quills >= 3 ? ' <span class="flair trophy">🥇</span>' : ''))}${p.author_group ? ` <span class="flair ${p.author_group.toLowerCase()}">[${p.author_group}]</span>` : ""} · ${p.created_at_display || p.created_at}`;
           }
         }
         const res = await fetch(`/api/posts/{{ post.id }}/comments`);

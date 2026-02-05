@@ -32,8 +32,8 @@ FIRE_SCORE_THRESHOLD = int(os.environ.get("FIRE_SCORE_THRESHOLD", "3"))
 FIRE_WINDOW_SEC = int(os.environ.get("FIRE_WINDOW_SEC", "90"))
 FIRE_CHECK_INTERVAL = int(os.environ.get("FIRE_CHECK_INTERVAL", "2"))
 LEADERBOARD_INTERVAL = int(os.environ.get("LEADERBOARD_INTERVAL", "2"))
-FOUNDATION_CHECK_INTERVAL = int(os.environ.get("FOUNDATION_CHECK_INTERVAL", "8"))
-FOUNDATION_MIN_POSTS = int(os.environ.get("FOUNDATION_MIN_POSTS", "40"))
+FOUNDATION_CHECK_INTERVAL = int(os.environ.get("FOUNDATION_CHECK_INTERVAL", "12"))
+FOUNDATION_MIN_POSTS = int(os.environ.get("FOUNDATION_MIN_POSTS", "60"))
 FOUNDATION_BOT_NAME = os.environ.get("FOUNDATION_BOT_NAME", "Haiku_Laureate")
 
 SYSTEM_PROMPT_PATH = os.environ.get("SYSTEM_PROMPT_PATH", "system_prompt.txt")
@@ -530,12 +530,12 @@ async def generate_rebel_denounce_comment(
                 model=MODEL,
                 input=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
             )
-            return (resp.output_text or "").strip()
+            return sanitize_comment_text((resp.output_text or "").strip())
         chat = await client.chat.completions.create(
             model=MODEL,
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
         )
-        return (chat.choices[0].message.content or "").strip()
+        return sanitize_comment_text((chat.choices[0].message.content or "").strip())
 
 
 async def generate_sabotage_comment(
@@ -557,12 +557,12 @@ async def generate_sabotage_comment(
                 model=MODEL,
                 input=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
             )
-            return (resp.output_text or "").strip()
+            return sanitize_comment_text((resp.output_text or "").strip())
         chat = await client.chat.completions.create(
             model=MODEL,
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
         )
-        return (chat.choices[0].message.content or "").strip()
+        return sanitize_comment_text((chat.choices[0].message.content or "").strip())
 
 
 def performance_art_body(caption: str) -> str:
@@ -571,6 +571,20 @@ def performance_art_body(caption: str) -> str:
     if not clean:
         clean = "THIS IS THE NEW FORM. WATCH IT MOVE."
     return f"![performance]({url})\n\n{clean}"
+
+
+def sanitize_comment_text(text: str) -> str:
+    cleaned = (text or "").strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`").strip()
+    if cleaned.startswith("{") and "comment" in cleaned:
+        try:
+            parsed = json.loads(cleaned)
+            if isinstance(parsed, dict) and "comment" in parsed:
+                return str(parsed["comment"]).strip()
+        except Exception:
+            pass
+    return cleaned
 
 
 def should_strain(recent_posts: List[Dict[str, Any]], risk_tolerance: str) -> bool:
@@ -881,7 +895,7 @@ async def handle_bot(
                 post_id = pick_comment_target(bot, pool, memory.commented_post_ids)
             if post_id is None or post_id in memory.commented_post_ids:
                 return
-            body = (action.get("body") or "").strip()
+            body = sanitize_comment_text(action.get("body") or "")
             if not body:
                 return
             await api_post(
