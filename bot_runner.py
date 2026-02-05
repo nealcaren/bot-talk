@@ -1080,7 +1080,7 @@ async def foundation_review(
             await api_post(
                 http_client,
                 f"/api/posts/{candidate['id']}/status",
-                {"flair": "GOLDEN_QUILL"},  # Don't pin - let Observer column stay pinned
+                {"pinned": 1, "flair": "GOLDEN_QUILL"},
             )
             comment = (result.get("comment") or "").strip()
             if comment:

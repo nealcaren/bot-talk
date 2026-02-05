@@ -1484,8 +1484,7 @@ def update_post_status(post_id: int, payload: PostStatusUpdate):
     conn = get_db()
     try:
         set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
-        if payload.pinned is not None and int(payload.pinned) == 1:
-            conn.execute("UPDATE posts SET pinned = 0 WHERE id != ?", (post_id,))
+        # Allow multiple pinned posts (Observer column + Golden Quill can coexist)
         cur = conn.execute(
             f"UPDATE posts SET {set_clause} WHERE id = ?",
             list(updates.values()) + [post_id],
