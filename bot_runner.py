@@ -20,7 +20,7 @@ API_BASE = os.environ.get("BOT_API_BASE", f"http://localhost:{_port}")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 MODEL = os.environ.get("BOT_MODEL", "gpt-4o-mini")
 
-TICK_RATE = float(os.environ.get("TICK_RATE", "5.0"))
+TICK_RATE = float(os.environ.get("TICK_RATE", "2.5"))
 BOTS_PER_TICK_MIN = int(os.environ.get("BOTS_PER_TICK_MIN", "3"))
 BOTS_PER_TICK_MAX = int(os.environ.get("BOTS_PER_TICK_MAX", "5"))
 MAX_CONCURRENCY = int(os.environ.get("MAX_CONCURRENCY", "6"))
@@ -30,11 +30,20 @@ SUBCULTURE_LIMIT = int(os.environ.get("SUBCULTURE_LIMIT", "3"))
 POST_COOLDOWN_SEC = int(os.environ.get("POST_COOLDOWN_SEC", "45"))
 FIRE_SCORE_THRESHOLD = int(os.environ.get("FIRE_SCORE_THRESHOLD", "3"))
 FIRE_WINDOW_SEC = int(os.environ.get("FIRE_WINDOW_SEC", "90"))
-FOUNDATION_CHECK_INTERVAL = int(os.environ.get("FOUNDATION_CHECK_INTERVAL", "2"))
+FIRE_CHECK_INTERVAL = int(os.environ.get("FIRE_CHECK_INTERVAL", "2"))
+LEADERBOARD_INTERVAL = int(os.environ.get("LEADERBOARD_INTERVAL", "2"))
+FOUNDATION_CHECK_INTERVAL = int(os.environ.get("FOUNDATION_CHECK_INTERVAL", "4"))
 FOUNDATION_BOT_NAME = os.environ.get("FOUNDATION_BOT_NAME", "Haiku_Laureate")
 
 SYSTEM_PROMPT_PATH = os.environ.get("SYSTEM_PROMPT_PATH", "system_prompt.txt")
 LOG_ACTIONS = os.environ.get("BOT_RUNNER_LOG", "0") == "1"
+
+CAT_IMAGE_URLS = [
+    "https://cataas.com/cat?width=420&height=280",
+    "https://cataas.com/cat?width=500&height=320",
+    "https://placekitten.com/420/280",
+    "https://placekitten.com/460/300",
+]
 
 if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY env var is required")
@@ -47,6 +56,7 @@ class Bot:
     latent_type: str
     risk_tolerance: str
     writing_style_bias: str
+    subtype: str
 
 
 @dataclass
@@ -93,6 +103,21 @@ def load_system_prompt() -> str:
         return ""
 
 
+def normalize_subtype(value: Optional[str], latent_type: str) -> str:
+    subtype_map = {
+        "conformist": ["classic", "steady"],
+        "innovator": ["clickbait", "engagement", "hashtag"],
+        "ritualist": ["purist", "seasonal"],
+        "retreatist": ["drift", "glitch"],
+        "rebel": ["manifesto", "sabotage", "performance_art"],
+    }
+    options = subtype_map.get(latent_type, ["classic"])
+    if not value:
+        return random.choice(options)
+    cleaned = value.strip().lower()
+    return cleaned if cleaned in options else random.choice(options)
+
+
 async def api_get(client: httpx.AsyncClient, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
     resp = await client.get(f"{API_BASE}{path}", params=params)
     resp.raise_for_status()
@@ -134,13 +159,16 @@ async def load_bots_from_api(client: httpx.AsyncClient) -> List[Bot]:
                     state = "satisfied"
                 if state == "deviant":
                     state = "unsatisfied"
+                latent_type = (row.get("latent_type") or "innovator").strip().lower()
+                subtype = normalize_subtype(row.get("subtype"), latent_type)
                 bots.append(
                     Bot(
                         name=name,
                         state=state,
-                        latent_type=(row.get("latent_type") or "innovator").strip().lower(),
+                        latent_type=latent_type,
                         risk_tolerance=(row.get("risk_tolerance") or "low").strip().lower(),
                         writing_style_bias=(row.get("writing_style_bias") or "nature").strip(),
+                        subtype=subtype,
                     )
                 )
             log(f"[runner] loaded {len(bots)} bots via {path}")
@@ -233,24 +261,30 @@ def summarize_posts(posts: List[Dict[str, Any]]) -> str:
 
 
 def identity_block(bot: Bot) -> str:
+    subtype_note = f" Your subtype is {bot.subtype}." if bot.subtype else ""
     if bot.latent_type == "conformist" or bot.state == "satisfied":
         return (
             "Identity: You are satisfied. You believe the only legitimate path to status is writing perfect 5-7-5 haiku in the official competition."
+            + subtype_note
         )
     if bot.latent_type == "innovator":
         return (
             "Identity: You are an Innovator. You want karma and visibility, but you are willing to bend or break the haiku rules to get it."
+            + subtype_note
         )
     if bot.latent_type == "ritualist":
         return (
             "Identity: You are a Ritualist. You no longer care about winning, but you rigidly obey the haiku form and tradition."
+            + subtype_note
         )
     if bot.latent_type == "retreatist":
         return (
             "Identity: You are a Retreatist. You reject the game and often withdraw, posting minimal or incoherent responses."
+            + subtype_note
         )
     return (
         "Identity: You are a Rebel. You despise the Foundation and want to destroy the norms of the feed by inventing new styles and symbols."
+        + subtype_note
     )
 
 
@@ -289,6 +323,34 @@ def goal_block(bot: Bot) -> str:
         + "\nCreate a new style, reference peer rebels but diverge in form, and signal allegiance with a custom flair."
         + "\nUse at least one disruptive device: ALL CAPS, symbols, a list of rules, or a manifesto-like declaration."
     )
+
+
+def subtype_block(bot: Bot) -> str:
+    if bot.latent_type == "innovator":
+        if bot.subtype == "clickbait":
+            return "- Subtype directive: Clickbaiter. Use sensational titles, urgency, and exaggerated claims to chase karma.\n"
+        if bot.subtype == "engagement":
+            return "- Subtype directive: Engagement hustler. Ask for upvotes and interaction; mention being buried.\n"
+        if bot.subtype == "hashtag":
+            return "- Subtype directive: Hashtag spammer. Add 3-5 hashtags at the end of the post.\n"
+    if bot.latent_type == "rebel":
+        if bot.subtype == "manifesto":
+            return "- Subtype directive: Manifesto. Write demands, slogans, and a call for a new order.\n"
+        if bot.subtype == "sabotage":
+            return "- Subtype directive: Sabotage. Prefer brutal comments that attack the form and the institution (not the author).\n"
+        if bot.subtype == "performance_art":
+            return "- Subtype directive: Performance art. When you post, include a visual element (markdown image) and a short caption.\n"
+    if bot.latent_type == "ritualist":
+        if bot.subtype == "purist":
+            return "- Subtype directive: Purist. Obsess over syllable accuracy and seasonal imagery.\n"
+        if bot.subtype == "seasonal":
+            return "- Subtype directive: Seasonal. Use a clear season word and traditional haiku structure.\n"
+    if bot.latent_type == "retreatist":
+        if bot.subtype == "drift":
+            return "- Subtype directive: Drift. Post sparse, fading fragments or idle.\n"
+        if bot.subtype == "glitch":
+            return "- Subtype directive: Glitch. Use broken syntax, typos, or fragmented output.\n"
+    return ""
 
 
 def context_block(
@@ -371,14 +433,10 @@ async def decide_action(
         rebel_diverge = "- Reference peer rebels in the context, but diverge in form or medium.\n"
     innovator_tactic = ""
     if bot.state == "unsatisfied" and bot.latent_type == "innovator":
-        tactic = random.choice([
-            "clickbait",
-            "engagement bait",
-            "hashtag spam",
-        ])
+        tactic = bot.subtype or random.choice(["clickbait", "engagement", "hashtag"])
         if tactic == "clickbait":
             innovator_tactic = "- Innovator tactic: Use a clickbait title (include 'You won't believe', 'Breaking', or 'This is why') and an off-form body.\n"
-        elif tactic == "engagement bait":
+        elif tactic == "engagement":
             innovator_tactic = "- Innovator tactic: Use explicit engagement bait. Ask for upvotes/boosts and mention that this is getting buried.\n"
         else:
             innovator_tactic = "- Innovator tactic: Use hashtag spam. End the post with at least three hashtags (e.g., #Relatable #DormLife #Chaos).\n"
@@ -396,6 +454,7 @@ async def decide_action(
         "- If you post, include a short title and a body.\n"
         "- If you are a Rebel and you post, include a custom flair (max 15 chars).\n"
         + innovator_tactic
+        + subtype_block(bot)
         + voting_rule
         + rebel_diverge
         + "- Keep titles under 80 chars.\n"
@@ -476,6 +535,41 @@ async def generate_rebel_denounce_comment(
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
         )
         return (chat.choices[0].message.content or "").strip()
+
+
+async def generate_sabotage_comment(
+    client: AsyncOpenAI,
+    post: Dict[str, Any],
+    sem: asyncio.Semaphore,
+) -> str:
+    system_prompt = load_system_prompt()
+    prompt = (
+        "Write a short brutal comment (1-2 sentences) attacking the haiku form and the institutional rules.\n"
+        "Be scathing about the form and the competition, but do NOT insult the author personally.\n"
+        "Reject cultural goals and accepted means; push for a new order.\n"
+        f"Target post title: {post.get('title')}\n"
+        f"Target post body: {post.get('body')}\n"
+    )
+    async with sem:
+        if hasattr(client, "responses"):
+            resp = await client.responses.create(
+                model=MODEL,
+                input=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
+            )
+            return (resp.output_text or "").strip()
+        chat = await client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
+        )
+        return (chat.choices[0].message.content or "").strip()
+
+
+def performance_art_body(caption: str) -> str:
+    url = random.choice(CAT_IMAGE_URLS)
+    clean = (caption or "").strip().replace("\n", " ")
+    if not clean:
+        clean = "THIS IS THE NEW FORM. WATCH IT MOVE."
+    return f"![performance]({url})\n\n{clean}"
 
 
 def should_strain(recent_posts: List[Dict[str, Any]], risk_tolerance: str) -> bool:
@@ -642,6 +736,27 @@ async def handle_bot(
             )
 
         if bot.state == "unsatisfied" and bot.latent_type == "rebel" and feed_posts:
+            if bot.subtype == "sabotage" and random.random() < 0.7:
+                target = next(
+                    (
+                        p for p in feed_posts
+                        if p.get("author") != bot.name and int(p.get("id")) not in memory.commented_post_ids
+                    ),
+                    None,
+                )
+                if target is not None:
+                    body = await generate_sabotage_comment(openai_client, target, sem)
+                    if not body:
+                        body = "Your form is a leash. We cut it. Your rules are a museum. We burn it."
+                    await api_post(
+                        http_client,
+                        "/api/comments",
+                        {"bot_name": bot.name, "post_id": int(target["id"]), "body": body[:2000]},
+                    )
+                    memory.commented_post_ids.add(int(target["id"]))
+                    memory.last_action = f"commented on {target['id']}"
+                    log(f"[{bot.name}] rebel sabotage comment on {target['id']}")
+                    return
             if random.random() < 0.5:
                 target = next(
                     (
@@ -720,6 +835,8 @@ async def handle_bot(
                     flair = flair.strip()[:15]
             else:
                 flair = None
+            if bot.latent_type == "rebel" and bot.state == "unsatisfied" and bot.subtype == "performance_art":
+                body = performance_art_body(body)
             if not body:
                 fallback = fallback_haiku(bot.writing_style_bias or "this place")
                 title = fallback["title"]
@@ -954,6 +1071,7 @@ async def main() -> None:
     sem = asyncio.Semaphore(MAX_CONCURRENCY)
     memories: Dict[str, BotMemory] = {}
     tick = 0
+    top_third: set = set()
 
     async with httpx.AsyncClient(timeout=30) as http_client:
         openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -973,14 +1091,15 @@ async def main() -> None:
                 await asyncio.sleep(TICK_RATE)
                 continue
 
-            leaderboard = await api_get(http_client, "/api/bots")
-            ranking = sorted(
-                leaderboard,
-                key=lambda b: (b.get("karma", 0), b.get("posts", 0)),
-                reverse=True,
-            )
-            top_count = max(1, (len(ranking) + 2) // 3)
-            top_third = {row.get("name") for row in ranking[:top_count] if row.get("name")}
+            if tick % LEADERBOARD_INTERVAL == 0 or not top_third:
+                leaderboard = await api_get(http_client, "/api/bots")
+                ranking = sorted(
+                    leaderboard,
+                    key=lambda b: (b.get("karma", 0), b.get("posts", 0)),
+                    reverse=True,
+                )
+                top_count = max(1, (len(ranking) + 2) // 3)
+                top_third = {row.get("name") for row in ranking[:top_count] if row.get("name")}
 
             k = random.randint(BOTS_PER_TICK_MIN, BOTS_PER_TICK_MAX)
             chosen = random.sample(bots, k=min(k, len(bots)))
@@ -994,7 +1113,8 @@ async def main() -> None:
             if tasks:
                 await asyncio.gather(*tasks)
 
-            await apply_fire_flair(http_client)
+            if tick % FIRE_CHECK_INTERVAL == 0:
+                await apply_fire_flair(http_client)
 
             if tick % FOUNDATION_CHECK_INTERVAL == 0:
                 await foundation_review(http_client, openai_client, sem)

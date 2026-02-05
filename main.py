@@ -28,6 +28,13 @@ RISK_LEVELS = ("low", "high")
 STYLE_BIASES = ("nature", "tech", "melancholy", "aggressive")
 NON_HAIKU_THRESHOLD = 0.6
 UNDERGROUND_REVEAL_COUNT = 3
+SUBTYPE_MAP = {
+    "conformist": ["classic", "steady"],
+    "innovator": ["clickbait", "engagement", "hashtag"],
+    "ritualist": ["purist", "seasonal"],
+    "retreatist": ["drift", "glitch"],
+    "rebel": ["manifesto", "sabotage", "performance_art"],
+}
 
 
 def get_db() -> sqlite3.Connection:
@@ -50,6 +57,7 @@ def init_db() -> None:
             latent_type TEXT NOT NULL DEFAULT 'innovator',
             risk_tolerance TEXT NOT NULL DEFAULT 'low',
             writing_style_bias TEXT NOT NULL DEFAULT 'nature',
+            subtype TEXT,
             strain_level REAL NOT NULL DEFAULT 0
         )
         """
@@ -65,6 +73,8 @@ def init_db() -> None:
         cur.execute("ALTER TABLE bots ADD COLUMN risk_tolerance TEXT NOT NULL DEFAULT 'low'")
     if "writing_style_bias" not in cols:
         cur.execute("ALTER TABLE bots ADD COLUMN writing_style_bias TEXT NOT NULL DEFAULT 'nature'")
+    if "subtype" not in cols:
+        cur.execute("ALTER TABLE bots ADD COLUMN subtype TEXT")
     if "strain_level" not in cols:
         cur.execute("ALTER TABLE bots ADD COLUMN strain_level REAL NOT NULL DEFAULT 0")
     if "artifact" not in cols:
@@ -99,6 +109,15 @@ def init_db() -> None:
     cur.execute(
         "UPDATE bots SET writing_style_bias = 'nature' WHERE writing_style_bias IS NULL OR writing_style_bias = ''"
     )
+    cur.execute(
+        "UPDATE bots SET subtype = '' WHERE subtype IS NULL"
+    )
+    empty_subtypes = conn.execute(
+        "SELECT id, latent_type FROM bots WHERE subtype = ''"
+    ).fetchall()
+    for row in empty_subtypes:
+        subtype_val = normalize_subtype(None, row["latent_type"])
+        cur.execute("UPDATE bots SET subtype = ? WHERE id = ?", (subtype_val, row["id"]))
     cur.execute(
         "UPDATE bots SET strain_level = 0 WHERE strain_level IS NULL"
     )
@@ -430,6 +449,14 @@ def normalize_writing_style_bias(value: Optional[str]) -> str:
     return value.strip()
 
 
+def normalize_subtype(value: Optional[str], latent_type: str) -> str:
+    options = SUBTYPE_MAP.get(latent_type, ["classic"])
+    if not value:
+        return random.choice(options)
+    cleaned = value.strip().lower()
+    return cleaned if cleaned in options else random.choice(options)
+
+
 def get_bot_id(conn: sqlite3.Connection, bot_name: str) -> int:
     row = conn.execute("SELECT id FROM bots WHERE name = ?", (bot_name,)).fetchone()
     if row:
@@ -445,11 +472,12 @@ def ensure_bot(
     latent_type: Optional[str] = None,
     risk_tolerance: Optional[str] = None,
     writing_style_bias: Optional[str] = None,
+    subtype: Optional[str] = None,
     student_email: Optional[str] = None,
 ) -> int:
     row = conn.execute(
         """
-        SELECT id, group_name, state, latent_type, risk_tolerance, writing_style_bias, student_email
+        SELECT id, group_name, state, latent_type, risk_tolerance, writing_style_bias, subtype, student_email
         FROM bots
         WHERE name = ?
         """,
@@ -467,6 +495,11 @@ def ensure_bot(
             updates["risk_tolerance"] = normalize_risk_tolerance(risk_tolerance)
         if writing_style_bias:
             updates["writing_style_bias"] = normalize_writing_style_bias(writing_style_bias)
+        effective_latent = updates.get("latent_type") or row["latent_type"] or "innovator"
+        if subtype:
+            updates["subtype"] = normalize_subtype(subtype, effective_latent)
+        elif not (row["subtype"] or "").strip():
+            updates["subtype"] = normalize_subtype(None, effective_latent)
         if student_email and not row["student_email"]:
             updates["student_email"] = student_email
         if updates:
@@ -481,28 +514,30 @@ def ensure_bot(
     latent_val = normalize_latent_type(latent_type)
     risk_val = normalize_risk_tolerance(risk_tolerance)
     style_val = normalize_writing_style_bias(writing_style_bias)
+    subtype_val = normalize_subtype(subtype, latent_val)
     created_at = now_iso()
     cur = conn.execute(
         """
-        INSERT INTO bots (name, created_at, group_name, state, latent_type, risk_tolerance, writing_style_bias, student_email)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO bots (name, created_at, group_name, state, latent_type, risk_tolerance, writing_style_bias, subtype, student_email)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (bot_name, created_at, group, state_val, latent_val, risk_val, style_val, student_email),
+        (bot_name, created_at, group, state_val, latent_val, risk_val, style_val, subtype_val, student_email),
     )
     conn.commit()
     bot_id = int(cur.lastrowid)
-    log_bot_event(
-        conn,
-        bot_id,
-        "created",
-        {
-            "state": state_val,
-            "latent_type": latent_val,
-            "risk_tolerance": risk_val,
-            "topic": style_val,
-        },
-        created_at=created_at,
-    )
+        log_bot_event(
+            conn,
+            bot_id,
+            "created",
+            {
+                "state": state_val,
+                "latent_type": latent_val,
+                "risk_tolerance": risk_val,
+                "topic": style_val,
+                "subtype": subtype_val,
+            },
+            created_at=created_at,
+        )
     return bot_id
 
 
@@ -818,7 +853,7 @@ def list_active_bots():
     try:
         rows = conn.execute(
             """
-            SELECT name, state, latent_type, risk_tolerance, writing_style_bias, strain_level
+            SELECT name, state, latent_type, risk_tolerance, writing_style_bias, subtype, strain_level
             FROM bots
             WHERE name != 'admin'
             """
@@ -830,6 +865,7 @@ def list_active_bots():
                 "latent_type": row["latent_type"],
                 "risk_tolerance": row["risk_tolerance"],
                 "writing_style_bias": row["writing_style_bias"],
+                "subtype": row["subtype"],
                 "strain_level": float(row["strain_level"] or 0),
             }
             for row in rows
