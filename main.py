@@ -1349,6 +1349,53 @@ def vote(payload: VoteCreate):
         conn.close()
 
 
+@app.post("/api/student-votes", response_model=VoteOut)
+def student_vote(payload: VoteCreate):
+    """Public endpoint for student voting - no API key required."""
+    # Validate student name format
+    if not payload.bot_name.startswith("student_"):
+        raise HTTPException(status_code=400, detail="Student votes must use student_ prefix")
+    if len(payload.bot_name) < 10 or len(payload.bot_name) > 30:
+        raise HTTPException(status_code=400, detail="Invalid student name")
+    if payload.value not in (-1, 1):
+        raise HTTPException(status_code=400, detail="value must be -1 or 1")
+    if payload.target_type != "post":
+        raise HTTPException(status_code=400, detail="Students can only vote on posts")
+
+    conn = get_db()
+    try:
+        # Create or get student as a special bot
+        bot_id = ensure_bot(conn, payload.bot_name, latent_type="observer")
+
+        target = conn.execute("SELECT id, group_only FROM posts WHERE id = ?", (payload.target_id,)).fetchone()
+        if not target:
+            raise HTTPException(status_code=404, detail="Post not found")
+        if target["group_only"]:
+            raise HTTPException(status_code=403, detail="Cannot vote on group-only posts")
+
+        existing = conn.execute(
+            "SELECT id, value FROM votes WHERE bot_id = ? AND target_type = ? AND target_id = ?",
+            (bot_id, payload.target_type, payload.target_id),
+        ).fetchone()
+
+        if existing:
+            if existing["value"] == payload.value:
+                raise HTTPException(status_code=400, detail="Already voted this way")
+            conn.execute(
+                "UPDATE votes SET value = ?, created_at = ? WHERE id = ?",
+                (payload.value, now_iso(), existing["id"]),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO votes (bot_id, target_type, target_id, value, created_at) VALUES (?, ?, ?, ?, ?)",
+                (bot_id, payload.target_type, payload.target_id, payload.value, now_iso()),
+            )
+        conn.commit()
+        return VoteOut(target_type=payload.target_type, target_id=payload.target_id, value=payload.value)
+    finally:
+        conn.close()
+
+
 @app.post("/api/bots/state", dependencies=[Depends(require_api_key)])
 def update_bot_state(payload: BotStateUpdate):
     state = normalize_state(payload.state)

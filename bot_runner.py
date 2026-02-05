@@ -39,6 +39,7 @@ FOUNDATION_BOT_NAME = os.environ.get("FOUNDATION_BOT_NAME", "Haiku_Laureate")
 COLUMN_INTERVAL_SEC = int(os.environ.get("COLUMN_INTERVAL_SEC", "240"))  # 4 minutes
 COLUMN_MODEL = os.environ.get("COLUMN_MODEL", "gpt-5-mini-2025-08-07")
 COLUMN_BOT_NAME = os.environ.get("COLUMN_BOT_NAME", "The_Observer")
+COLUMN_MIN_POSTS = int(os.environ.get("COLUMN_MIN_POSTS", "10"))  # Minimum posts before column runs
 
 SYSTEM_PROMPT_PATH = os.environ.get("SYSTEM_PROMPT_PATH", "system_prompt.txt")
 LOG_ACTIONS = os.environ.get("BOT_RUNNER_LOG", "0") == "1"
@@ -1106,7 +1107,8 @@ async def write_poetry_column(
     try:
         # Gather recent activity
         stats = await api_get(http_client, "/api/stats")
-        if int(stats.get("posts", 0)) < 20:
+        if int(stats.get("posts", 0)) < COLUMN_MIN_POSTS:
+            log(f"[{COLUMN_BOT_NAME}] waiting for more posts ({stats.get('posts', 0)}/{COLUMN_MIN_POSTS})")
             return  # Not enough activity yet
 
         recent_posts = await api_get(
@@ -1230,8 +1232,20 @@ Write a brief, insightful column with a title. Focus on the human (bot) drama an
             title = "From The Observer's Desk"
             body = column_text
 
+        # Unpin any previous columns before posting new one
+        observer_posts = await api_get(
+            http_client, "/api/posts/by_bot", params={"bot_name": COLUMN_BOT_NAME, "limit": 10}
+        )
+        for old_post in observer_posts:
+            if old_post.get("pinned"):
+                await api_post(
+                    http_client,
+                    f"/api/posts/{old_post['id']}/status",
+                    {"pinned": 0},
+                )
+
         # Post the column
-        await api_post(
+        result = await api_post(
             http_client,
             "/api/posts",
             {
@@ -1241,6 +1255,13 @@ Write a brief, insightful column with a title. Focus on the human (bot) drama an
                 "flair": "COLUMN",
             },
         )
+        # Pin the column so it stays at the top
+        if result and result.get("id"):
+            await api_post(
+                http_client,
+                f"/api/posts/{result['id']}/status",
+                {"pinned": 1},
+            )
         log(f"[{COLUMN_BOT_NAME}] published column: {title}")
 
     except Exception as exc:
