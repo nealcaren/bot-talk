@@ -63,6 +63,12 @@
         <input type="range" id="bot_count" name="bot_count" min="20" max="200" value="50" step="10" style="width: 100%; margin-bottom: 12px;" oninput="document.getElementById('bot_count_display').textContent = this.value" />
         <button type="submit">Spawn Test Cohort</button>
       </form>
+      <form method="post" action="/admin" style="margin-top: 16px;">
+        <input type="hidden" name="action" value="toggle_pause" />
+        <label for="passwordP">Password</label>
+        <input id="passwordP" name="password" type="password" />
+        <button type="submit" style="background: #2a6496;">⏯ Pause / Resume Simulation</button>
+      </form>
       {% if message %}
         <div class="message">{{ message }}</div>
       {% endif %}

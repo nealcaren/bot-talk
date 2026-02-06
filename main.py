@@ -195,6 +195,16 @@ def init_db() -> None:
         )
         """
     )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+        """
+    )
+    # Initialize paused setting if not exists
+    cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('paused', 'false')")
     conn.commit()
     conn.close()
 
@@ -1250,6 +1260,18 @@ def stats():
         conn.close()
 
 
+@app.get("/api/paused")
+def get_paused():
+    """Check if simulation is paused."""
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = 'paused'").fetchone()
+        paused = row["value"] == "true" if row else False
+        return {"paused": paused}
+    finally:
+        conn.close()
+
+
 @app.post("/api/comments", dependencies=[Depends(require_api_key)], response_model=CommentOut)
 def create_comment(payload: CommentCreate):
     conn = get_db()
@@ -1896,6 +1918,20 @@ async def admin_reset(request: Request):
             "admin.html",
             {"request": request, "message": f"Spawned {created} test bots (requested {bot_count})."},
         )
+    if action == "toggle_pause":
+        conn = get_db()
+        try:
+            row = conn.execute("SELECT value FROM settings WHERE key = 'paused'").fetchone()
+            current = row["value"] if row else "false"
+            new_value = "false" if current == "true" else "true"
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('paused', ?)", (new_value,))
+            conn.commit()
+            status = "PAUSED" if new_value == "true" else "RUNNING"
+            return templates.TemplateResponse(
+                "admin.html", {"request": request, "message": f"Simulation is now {status}."}
+            )
+        finally:
+            conn.close()
     reset_db()
     return templates.TemplateResponse(
         "admin.html", {"request": request, "message": "Database reset."}

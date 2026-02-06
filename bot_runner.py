@@ -1351,6 +1351,16 @@ async def main() -> None:
             await spawn_test_cohort(http_client, admin_pw)
 
         while True:
+            # Check if simulation is paused
+            try:
+                pause_resp = await api_get(http_client, "/api/paused")
+                if pause_resp and pause_resp.get("paused"):
+                    log("[runner] Simulation PAUSED - waiting...")
+                    await asyncio.sleep(TICK_RATE)
+                    continue
+            except Exception:
+                pass  # If check fails, continue running
+
             bots = await load_bots_from_api(http_client)
             if not bots:
                 log("No bots registered yet.")
